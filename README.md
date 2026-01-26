@@ -11,11 +11,11 @@
 
 
 
-Cogitator is a small Rust program for producing repeatable evaluation runs. Give it a seed and a number of runs and it generates a stable set of cases, writes a CSV, and prints an optional terminal “Mission Control” summary.
+Cogitator is a deterministic evaluation harness. You give it a seed and a run count; it deterministically derives a `case_id`, a difficulty scalar, a score, and a pass/fail for each run, then writes everything to CSV.
 
-The main promise is simple: same inputs, same output. If the results change, something changed.
+Same inputs, same output. If the numbers move, something real changed.
 
-## What it produces
+## Output
 
 Each run generates:
 
