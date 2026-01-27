@@ -7,22 +7,43 @@
    ╚═════╝  ╚═════╝  ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
 
 
+# Cogitator
 
-Cogitator is a deterministic execution and witnessed-telemetry framework for scientifically auditable evaluation of autonomous cyber defence systems.
+Cogitator is a deterministic execution  
+and witnessed-telemetry framework  
+for scientifically auditable evaluation  
+of autonomous cyber defence systems.
 
-Modern agentic security systems are increasingly powerful, but their evaluation remains fragile: stochastic inference, tool-mediated nondeterminism, parallel execution drift, and mutable logging make results difficult to reproduce or verify. Cogitator treats an evaluation run as a deterministic program whose full event trace is cryptographically committed, enabling rebuildable, replayable, third-party validation.
+Autonomous cyber agents are increasingly powerful.  
+But their evaluation is fragile.
+
+Stochastic inference drifts.  
+Tool interfaces introduce nondeterminism.  
+Parallel execution scrambles ordering.  
+Logs are easy to fake after the fact.
+
+Cogitator treats an evaluation run  
+as a deterministic program.
+
+The full event trace is committed  
+to a cryptographic witness root.
+
+This enables rebuildable, replayable,  
+third-party verification.
 
 ---
 
-## Core idea
+## Core invariant
 
-Cogitator enforces a simple scientific invariant:
+Same environment  
++ same input  
++ same seed  
 
-Same environment + same input + same seed  
 → same trajectory  
 → same witness root
 
-Rather than trusting narrative logs, Cogitator produces tamper-evident witness chains where every execution event contributes to a cryptographic commitment. Any insertion, deletion, mutation, or reordering changes the final witness root.
+Cogitator replaces narrative logs  
+with verifiable execution commitments.
 
 ---
 
@@ -30,69 +51,101 @@ Rather than trusting narrative logs, Cogitator produces tamper-evident witness c
 
 Cogitator provides:
 
-- Deterministic execution kernel for agentic cyber evaluation
-- Cryptographic witness chains committing to full causal traces
-- Explicit entropy budgeting to make randomness measurable
-- Reproducible evaluation environments grounded in NixOS derivations
-- Standalone verification of execution traces via witness recomputation
+- Deterministic execution kernel  
+  for agentic cyber evaluation  
+
+- Cryptographic witness chains  
+  committing to full causal traces  
+
+- Explicit entropy budgeting  
+  to make randomness measurable  
+
+- Reproducible evaluation environments  
+  grounded in NixOS derivations  
+
+- Standalone verification of traces  
+  via witness recomputation  
 
 ---
 
 ## Witness chains
 
-Cogitator commits to the entire event trace using a sequential hash chain:
+Every execution event updates  
+a sequential cryptographic commitment:
 
 h_0     = BLAKE3(“COGITATOR” || metadata)
 h_{t+1} = BLAKE3(h_t || encode(event_t))
 
-The final value, `witness_root = h_T`, uniquely commits to the run’s execution history.
+The final value is:
 
-This enables post-hoc verification:
+`witness_root = h_T`
 
-- If the witness root matches, the trace is authentic
-- If any event is altered, the commitment breaks
+It commits to the entire run history.
+
+Any insertion, deletion, mutation,  
+or reordering changes the witness root.
 
 ---
 
 ## Entropy budgeting
 
-Agent evaluations often hide randomness behind sampling temperatures, planner branches, tool timeouts, or scheduler jitter.
+Agent evaluations often hide randomness.
 
-Cogitator treats randomness as an explicit audited resource:
+Sampling temperatures.  
+Planner branches.  
+Tool timeouts.  
+Scheduler jitter.
 
-- entropy sources are declared in metadata
-- consumption is recorded in the trace
-- evaluations become comparable across models and runs
+Cogitator treats randomness  
+as an audited resource.
 
-Randomness becomes measurable rather than implicit.
+- entropy sources declared in metadata  
+- consumption recorded in the trace  
+- evaluations comparable across models  
+
+Randomness becomes measurable.  
+Not implicit.
 
 ---
 
 ## Reproducibility via NixOS
 
-Cogitator is designed to run inside reproducible NixOS environments.
+Cogitator is designed  
+for reproducible NixOS environments.
 
 This enables:
 
-- pinned dependency graphs
-- hermetic toolchains
-- rebuildable experiments
-- bit-identical evaluation pipelines
-- third-party verifiable re-execution from the same derivation
+- pinned dependency graphs  
+- hermetic toolchains  
+- rebuildable experiments  
+- bit-identical evaluation pipelines  
+- third-party verifiable re-execution  
 
-In practice, published results can be reproduced from a flake lock and verified by recomputing the witness root.
+Published results can be reproduced  
+from a flake lock.
+
+They can be verified  
+by recomputing the witness root.
 
 ---
 
 ## Artifact bundle (planned)
 
-Cogitator will release an artifact package containing:
+The Cogitator release will include:
 
-- Nix flake pinning all dependencies and runtimes
-- Deterministic execution kernel and tool wrappers
-- Canonical trace schema specification
-- Standalone verifier for witness root recomputation
-- Regression suite demonstrating stable witness roots across runs
+- Nix flake pinning dependencies  
+  and runtimes  
+
+- Deterministic kernel  
+  and tool wrappers  
+
+- Canonical trace schema specification  
+
+- Standalone verifier  
+  for witness root recomputation  
+
+- Regression suite  
+  demonstrating stable witness roots  
 
 ---
 
@@ -100,32 +153,53 @@ Cogitator will release an artifact package containing:
 
 Cogitator addresses:
 
-- accidental nondeterminism (parallelism, scheduling drift)
-- post-hoc log editing or trace fabrication
+- accidental nondeterminism  
+  (parallelism, scheduling drift)  
 
-Cogitator does not attempt to defend against:
+- post-hoc log editing  
+  or trace fabrication  
 
-- fully malicious host substrates (compromised hypervisors or OS)
+Cogitator does not defend against:
 
-The framework targets scientific auditability under declared pinned environments.
+- fully malicious host substrates  
+  (compromised hypervisors or OS)  
+
+The goal is scientific auditability  
+under declared pinned environments.
 
 ---
 
 ## Status
 
-Cogitator is an active research project. The current repository is intended as the reference implementation accompanying the Cogitator paper and artifact release.
+Cogitator is an active research project.
+
+This repository is intended  
+as the reference implementation  
+accompanying the Cogitator paper  
+and artifact release.
 
 ---
 
 ## References
 
-- Guo et al. R2: Record and Replay at the Application Level. OSDI 2008  
-- Malka et al. Functional Package Management Enables Reproducible Builds at Scale. arXiv 2025  
-- Aumasson et al. The BLAKE3 Hashing Framework. IETF draft 2024  
-- Trillian: Merkle-tree-backed verifiable logs. transparency.dev  
+- Guo et al.  
+  *R2: Record and Replay at the Application Level.*  
+  OSDI 2008  
+
+- Malka et al.  
+  *Functional Package Management Enables Reproducible Builds at Scale.*  
+  arXiv 2025  
+
+- Aumasson et al.  
+  *The BLAKE3 Hashing Framework.*  
+  IETF draft 2024  
+
+- Trillian  
+  Merkle-tree-backed verifiable logs  
+  transparency.dev  
 
 ---
 
 ## License
 
-To be released under an OSI-approved open source license.
+MIT
