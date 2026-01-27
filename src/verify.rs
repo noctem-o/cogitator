@@ -26,6 +26,8 @@ pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<Strin
     let trace_file = File::open(trace_path).with_context(|| "failed to open trace.jsonl")?;
     let reader = BufReader::new(trace_file);
 
+    let mut last_key: Option<(u32, u32)> = None;
+
     for (line_idx, line) in reader.lines().enumerate() {
         let line = line.with_context(|| "failed to read trace line")?;
         if line.trim().is_empty() {
@@ -41,6 +43,20 @@ pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<Strin
                 event.schema_version
             );
         }
+        let key = (event.run_id, event.step);
+        if let Some(prev) = last_key {
+            if key <= prev {
+                anyhow::bail!(
+                    "trace ordering violation at line {}: ({}, {}) after ({}, {})",
+                    line_idx + 1,
+                    key.0,
+                    key.1,
+                    prev.0,
+                    prev.1
+                );
+            }
+        }
+        last_key = Some(key);
         let event_bytes = encode_event(&event)?;
         witness.update(&event_bytes)?;
     }
