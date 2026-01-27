@@ -30,18 +30,31 @@ pub struct Summary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunMetadata {
+    pub witnessed: WitnessedMetadata,
+    pub provenance: ProvenanceMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WitnessedMetadata {
     pub schema_version: u32,
     pub seed: u64,
-    pub runs: u32,
+    pub requested_runs: u32,
+    pub executed_runs: u32,
     pub parallel: bool,
+    pub parallel_strategy: String,
     pub case_filter: Option<u32>,
+    pub entropy_sources: Vec<String>,
+    pub total_rng_calls: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenanceMetadata {
     pub created_at: String,
     pub git_rev: Option<String>,
     pub rustc_version: Option<String>,
     pub cargo_version: Option<String>,
     pub nix_store_path: Option<String>,
-    pub entropy_sources: Vec<String>,
-    pub total_rng_calls: u64,
+    pub variability_factors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

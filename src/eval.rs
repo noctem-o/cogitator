@@ -144,7 +144,14 @@ fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
 pub fn write_results(path: &Path, results: &[CaseResult]) -> Result<()> {
     let mut writer = Writer::from_path(path).with_context(|| "failed to open CSV output")?;
 
-    writer.write_record(["run_id", "case_id", "difficulty", "score", "passed", "rng_calls"])?;
+    writer.write_record([
+        "run_id",
+        "case_id",
+        "difficulty",
+        "score",
+        "passed",
+        "rng_calls",
+    ])?;
 
     // Belt-and-suspenders: ensure deterministic CSV row order.
     let mut ordered: Vec<&CaseResult> = results.iter().collect();

@@ -72,7 +72,7 @@ Cogitator provides:
 Every execution event updates  
 a sequential cryptographic commitment:
 
-h_0     = BLAKE3(“COGITATOR” || metadata)
+h_0     = BLAKE3(“COGITATOR” || witnessed_metadata)
 h_{t+1} = BLAKE3(h_t || encode(event_t))
 
 The final value is:
@@ -80,6 +80,8 @@ The final value is:
 `witness_root = h_T`
 
 It commits to the entire run history.
+Provenance (created_at, toolchain versions, git metadata)
+is recorded in meta.json but excluded from the witness root.
 
 Any insertion, deletion, mutation,  
 or reordering changes the witness root.
@@ -98,7 +100,7 @@ Scheduler jitter.
 Cogitator treats randomness  
 as an audited resource.
 
-- entropy sources declared in metadata  
+- entropy sources declared in witnessed metadata  
 - consumption recorded in the trace  
 - evaluations comparable across models  
 

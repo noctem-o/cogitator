@@ -16,7 +16,11 @@ mod tui;
 
 /// CLI entrypoint
 #[derive(Parser, Debug)]
-#[command(name = "cogitator", version, about = "Deterministic evaluation harness")]
+#[command(
+    name = "cogitator",
+    version,
+    about = "Deterministic evaluation harness"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: CommandLine,
@@ -44,10 +48,16 @@ pub struct RunArgs {
     pub out_dir: PathBuf,
 
     #[arg(long)]
+    pub clean: bool,
+
+    #[arg(long)]
     pub no_tui: bool,
 
     #[arg(long, default_value_t = true)]
     pub parallel: bool,
+
+    #[arg(long)]
+    pub created_at: Option<String>,
 }
 
 /// Verify a trace against an expected witness root.
@@ -84,6 +94,10 @@ fn run(args: RunArgs) -> Result<()> {
     let output = eval::run_with_trace(args.seed, &run_ids, args.parallel);
     let summary = eval::summarize(&output.results);
 
+    if args.clean && args.out_dir.exists() {
+        fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean output dir")?;
+    }
+
     fs::create_dir_all(&args.out_dir).with_context(|| "failed to create output dir")?;
 
     let metadata = build_metadata(&args, output.total_rng_calls, run_ids.len() as u32);
@@ -94,7 +108,7 @@ fn run(args: RunArgs) -> Result<()> {
     let trace_path = args.out_dir.join("trace.jsonl");
     write_trace(&trace_path, &output.trace)?;
 
-    let witness_root = compute_witness_root(&metadata_bytes, &output.trace)?;
+    let witness_root = compute_witness_root(&metadata.witnessed, &output.trace)?;
     let witness_path = args.out_dir.join("witness_root.txt");
     fs::write(&witness_path, format!("{}\n", witness_root))
         .with_context(|| "failed to write witness_root.txt")?;
@@ -102,12 +116,19 @@ fn run(args: RunArgs) -> Result<()> {
     let csv_path = args.out_dir.join("results.csv");
     eval::write_results(&csv_path, &output.results)?;
 
-    if !args.no_tui {
+    let tui_enabled = !args.no_tui && cfg!(feature = "tui");
+    if tui_enabled {
         #[cfg(feature = "tui")]
         tui::launch(args.seed, run_ids.len() as u32, &output.results, &summary)?;
-
-        #[cfg(not(feature = "tui"))]
-        println!("TUI disabled (missing feature).");
+    } else {
+        if !args.no_tui {
+            println!("TUI disabled (missing feature).");
+        }
+        println!("Artifacts:");
+        println!("  meta.json: {}", meta_path.display());
+        println!("  trace.jsonl: {}", trace_path.display());
+        println!("  results.csv: {}", csv_path.display());
+        println!("  witness_root.txt: {}", witness_path.display());
     }
 
     println!(
@@ -149,8 +170,12 @@ fn write_trace(path: &Path, events: &[model::TraceEvent]) -> Result<()> {
     Ok(())
 }
 
-fn compute_witness_root(metadata_bytes: &[u8], events: &[model::TraceEvent]) -> Result<String> {
-    let mut witness = witness::Witness::new(metadata_bytes)?;
+fn compute_witness_root(
+    metadata: &model::WitnessedMetadata,
+    events: &[model::TraceEvent],
+) -> Result<String> {
+    let metadata_bytes = trace::encode_witnessed_metadata(metadata)?;
+    let mut witness = witness::Witness::new(&metadata_bytes)?;
 
     for event in events {
         let event_bytes = trace::encode_event(event)?;
@@ -160,21 +185,78 @@ fn compute_witness_root(metadata_bytes: &[u8], events: &[model::TraceEvent]) -> 
     Ok(witness.finalize_hex())
 }
 
-fn build_metadata(args: &RunArgs, total_rng_calls: u64, runs: u32) -> model::RunMetadata {
+fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> model::RunMetadata {
+    let created_at = args
+        .created_at
+        .clone()
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    let git_rev = git_rev();
+    let rustc_version = command_version("rustc");
+    let cargo_version = command_version("cargo");
+    let nix_store_path = std::env::var("NIX_STORE").ok();
+    let variability_factors = build_variability_factors(
+        &created_at,
+        &git_rev,
+        &rustc_version,
+        &cargo_version,
+        &nix_store_path,
+    );
+
     model::RunMetadata {
-        schema_version: model::TRACE_SCHEMA_VERSION,
-        seed: args.seed,
-        runs,
-        parallel: args.parallel,
-        case_filter: args.case,
-        created_at: chrono::Utc::now().to_rfc3339(),
-        git_rev: git_rev(),
-        rustc_version: command_version("rustc"),
-        cargo_version: command_version("cargo"),
-        nix_store_path: std::env::var("NIX_STORE").ok(),
-        entropy_sources: vec!["rng".to_string()],
-        total_rng_calls,
+        witnessed: model::WitnessedMetadata {
+            schema_version: model::TRACE_SCHEMA_VERSION,
+            seed: args.seed,
+            requested_runs: args.runs,
+            executed_runs,
+            parallel: args.parallel,
+            parallel_strategy: parallel_strategy(args.parallel),
+            case_filter: args.case,
+            entropy_sources: vec!["rng:StdRng(seed)".to_string()],
+            total_rng_calls,
+        },
+        provenance: model::ProvenanceMetadata {
+            created_at,
+            git_rev,
+            rustc_version,
+            cargo_version,
+            nix_store_path,
+            variability_factors,
+        },
     }
+}
+
+fn parallel_strategy(parallel: bool) -> String {
+    if parallel {
+        "rayon/ordered-run-ids".to_string()
+    } else {
+        "sequential".to_string()
+    }
+}
+
+fn build_variability_factors(
+    created_at: &str,
+    git_rev: &Option<String>,
+    rustc_version: &Option<String>,
+    cargo_version: &Option<String>,
+    nix_store_path: &Option<String>,
+) -> Vec<String> {
+    let mut factors = Vec::new();
+    if !created_at.is_empty() {
+        factors.push("created_at".to_string());
+    }
+    if git_rev.is_some() {
+        factors.push("git_rev".to_string());
+    }
+    if rustc_version.is_some() {
+        factors.push("rustc_version".to_string());
+    }
+    if cargo_version.is_some() {
+        factors.push("cargo_version".to_string());
+    }
+    if nix_store_path.is_some() {
+        factors.push("nix_store_path".to_string());
+    }
+    factors
 }
 
 fn git_rev() -> Option<String> {

@@ -45,7 +45,10 @@ pub fn launch(seed: u64, runs: u32, results: &[CaseResult], summary: &Summary) -
                 .split(size);
 
             let title = Paragraph::new(Line::from(vec![
-                Span::styled("Cogitator Run Summary", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Cogitator Run Summary",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(format!("  •  Seed {}", seed)),
             ]))
             .wrap(Wrap { trim: true });
