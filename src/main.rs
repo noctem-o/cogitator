@@ -234,10 +234,7 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T, label: &str) -> Resul
 }
 
 fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> model::RunMetadata {
-    let created_at = args
-        .created_at
-        .clone()
-        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    let created_at = resolve_created_at(args);
     let git_rev = git_rev();
     let rustc_version = command_version("rustc");
     let cargo_version = command_version("cargo");
@@ -271,6 +268,22 @@ fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> m
             variability_factors,
         },
     }
+}
+
+fn resolve_created_at(args: &RunArgs) -> String {
+    if let Some(created_at) = args.created_at.clone() {
+        return created_at;
+    }
+
+    let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") else {
+        return String::new();
+    };
+    let Ok(secs) = epoch.parse::<i64>() else {
+        return String::new();
+    };
+    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0)
+        .map(|dt| dt.to_rfc3339())
+        .unwrap_or_default()
 }
 
 fn parallel_strategy(parallel: bool) -> String {
