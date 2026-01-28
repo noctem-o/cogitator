@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-pub const TOOL_TRANSCRIPT_SCHEMA_VERSION: u32 = 1;
+pub const TOOL_TRANSCRIPT_SCHEMA_VERSION: u32 = 2;
+pub const TOOL_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +24,7 @@ pub struct ToolResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCall {
+    pub index: u32,
     pub step: u32,
     pub request: ToolRequest,
     pub response: ToolResponse,
@@ -40,6 +42,8 @@ pub enum ToolMode {
 pub struct ToolTranscriptRecord {
     pub schema_version: u32,
     pub mode: ToolMode,
+    pub tool_schema_version: u32,
+    pub recorded_by: String,
     pub entries: Vec<ToolCall>,
 }
 
@@ -48,7 +52,35 @@ pub struct ToolTranscript {
     expected: Vec<ToolCall>,
     recorded: Vec<ToolCall>,
     cursor: usize,
-    mismatches: Vec<String>,
+    mismatches: Vec<ToolMismatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolMismatchKind {
+    OrderingMismatch,
+    RequestMismatch,
+    ResponseMismatch,
+    OutputHashMismatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolMismatch {
+    pub index: usize,
+    pub step: Option<u32>,
+    pub kind: ToolMismatchKind,
+    pub expected: Option<serde_json::Value>,
+    pub actual: Option<serde_json::Value>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ToolTranscriptHandle {
+    pub schema_version: u32,
+    pub tool_schema_version: u32,
+    pub mode: ToolMode,
 }
 
 impl ToolTranscript {
@@ -76,7 +108,7 @@ impl ToolTranscript {
         self.mode.clone()
     }
 
-    pub fn mismatches(&self) -> &[String] {
+    pub fn mismatches(&self) -> &[ToolMismatch] {
         &self.mismatches
     }
 
@@ -85,31 +117,69 @@ impl ToolTranscript {
             ToolMode::Live => {
                 let response = stub_response(&request);
                 self.recorded.push(ToolCall {
+                    index: self.cursor as u32,
                     step,
                     request,
                     response: response.clone(),
                 });
+                self.cursor += 1;
                 response
             }
             ToolMode::Replay => {
-                let response = if let Some(expected) = self.expected.get(self.cursor) {
+                let index = self.cursor;
+                let response = if let Some(expected) = self.expected.get(index) {
+                    if expected.index != index as u32 {
+                        self.mismatches.push(ToolMismatch {
+                            index,
+                            step: Some(step),
+                            kind: ToolMismatchKind::OrderingMismatch,
+                            expected: Some(serde_json::json!({ "index": expected.index })),
+                            actual: Some(serde_json::json!({ "index": index })),
+                            message: format!(
+                                "tool ordering mismatch: expected index {}, got {}",
+                                expected.index, index
+                            ),
+                        });
+                    }
                     if expected.step != step {
-                        self.mismatches.push(format!(
-                            "tool step mismatch: expected {}, got {}",
-                            expected.step, step
-                        ));
+                        self.mismatches.push(ToolMismatch {
+                            index,
+                            step: Some(step),
+                            kind: ToolMismatchKind::OrderingMismatch,
+                            expected: Some(serde_json::json!({ "step": expected.step })),
+                            actual: Some(serde_json::json!({ "step": step })),
+                            message: format!(
+                                "tool step mismatch: expected {}, got {}",
+                                expected.step, step
+                            ),
+                        });
                     }
                     if expected.request != request {
-                        self.mismatches
-                            .push(format!("tool request mismatch at index {}", self.cursor));
+                        self.mismatches.push(ToolMismatch {
+                            index,
+                            step: Some(step),
+                            kind: ToolMismatchKind::RequestMismatch,
+                            expected: Some(
+                                serde_json::to_value(&expected.request).unwrap_or_default(),
+                            ),
+                            actual: Some(serde_json::to_value(&request).unwrap_or_default()),
+                            message: format!("tool request mismatch at index {}", index),
+                        });
                     }
                     expected.response.clone()
                 } else {
-                    self.mismatches
-                        .push(format!("unexpected tool request at index {}", self.cursor));
+                    self.mismatches.push(ToolMismatch {
+                        index,
+                        step: Some(step),
+                        kind: ToolMismatchKind::OrderingMismatch,
+                        expected: None,
+                        actual: Some(serde_json::to_value(&request).unwrap_or_default()),
+                        message: format!("unexpected tool request at index {}", index),
+                    });
                     stub_response(&request)
                 };
                 self.recorded.push(ToolCall {
+                    index: index as u32,
                     step,
                     request,
                     response: response.clone(),
@@ -124,6 +194,8 @@ impl ToolTranscript {
         ToolTranscriptRecord {
             schema_version: TOOL_TRANSCRIPT_SCHEMA_VERSION,
             mode: self.mode,
+            tool_schema_version: TOOL_SCHEMA_VERSION,
+            recorded_by: "cogitator".to_string(),
             entries: self.recorded,
         }
     }
@@ -135,8 +207,18 @@ impl ToolTranscript {
             Some(ToolTranscriptRecord {
                 schema_version: TOOL_TRANSCRIPT_SCHEMA_VERSION,
                 mode: ToolMode::Replay,
+                tool_schema_version: TOOL_SCHEMA_VERSION,
+                recorded_by: "cogitator".to_string(),
                 entries: self.expected.clone(),
             })
+        }
+    }
+
+    pub fn handle(&self) -> ToolTranscriptHandle {
+        ToolTranscriptHandle {
+            schema_version: TOOL_TRANSCRIPT_SCHEMA_VERSION,
+            tool_schema_version: TOOL_SCHEMA_VERSION,
+            mode: self.mode.clone(),
         }
     }
 }

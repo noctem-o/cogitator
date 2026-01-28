@@ -241,9 +241,14 @@ pub fn launch_agent(
 
             let mut timeline_lines = Vec::new();
             for entry in agent_trace {
+                let decision_hint = entry
+                    .decision
+                    .as_ref()
+                    .map(|decision| format!(" decision={}", decision))
+                    .unwrap_or_default();
                 timeline_lines.push(Line::from(format!(
-                    "step {}: {} | {}",
-                    entry.step, entry.thought, entry.action
+                    "step {}: {}{}",
+                    entry.step, entry.assistant_message, decision_hint
                 )));
             }
             if timeline_lines.is_empty() {
@@ -262,8 +267,8 @@ pub fn launch_agent(
             let mut tool_lines = Vec::new();
             for call in &tool_transcript.entries {
                 tool_lines.push(Line::from(format!(
-                    "step {}: {} → {}",
-                    call.step, call.request.tool_name, call.response.success
+                    "index {} step {}: {} → {}",
+                    call.index, call.step, call.request.tool_name, call.response.success
                 )));
             }
             if tool_lines.is_empty() {

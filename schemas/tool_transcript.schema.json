@@ -3,17 +3,20 @@
   "title": "Cogitator Tool Transcript",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "mode", "entries"],
+  "required": ["schema_version", "mode", "tool_schema_version", "recorded_by", "entries"],
   "properties": {
     "schema_version": { "type": "integer", "minimum": 1 },
     "mode": { "type": "string", "enum": ["live", "replay"] },
+    "tool_schema_version": { "type": "integer", "minimum": 1 },
+    "recorded_by": { "type": "string" },
     "entries": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["step", "request", "response"],
+        "required": ["index", "step", "request", "response"],
         "properties": {
+          "index": { "type": "integer", "minimum": 0 },
           "step": { "type": "integer", "minimum": 0 },
           "request": { "type": "object" },
           "response": { "type": "object" }

@@ -1,0 +1,53 @@
+\\documentclass{article}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+\\usepackage{cite}
+
+\\title{Cogitator: Deterministic Witness Bundles for Tool-Using Agents}
+\\author{Cogitator Team}
+\\date{}
+
+\\begin{document}
+\\maketitle
+
+\\begin{abstract}
+Cogitator is a deterministic evaluation harness that turns agent tool usage into a
+replayable, verifiable scientific object. It emits canonical traces, tool transcripts,
+and witness bundles that can be independently audited to reproduce identical witness
+roots for the same declared inputs and seeds.
+\\end{abstract}
+
+\\section{Introduction}
+Modern tool-using agents are evaluated primarily through coarse metrics (e.g., final
+scores or pass/fail judgments). Cogitator complements these metrics with deterministic
+tool-level replay and cryptographic witness roots, enabling drift detection and
+cross-machine reproducibility even as hardware parallelism changes.
+
+\\section{Related Work}
+Agent evaluation surveys and infrastructure systems (e.g., the 2025 survey and ARE)
+map the current landscape of agent benchmarking and environment scaling, but do not
+provide deterministic tool-level witness bundles.\\cite{survey-llm-agents-2025,are-2025}
+The DFAH proposal is the closest conceptual neighbor, emphasizing determinism and
+faithfulness for financial agents; Cogitator extends this framing with witness roots
+and bundle verification that cryptographically binds tool calls and artifacts.\\cite{dfah-2026}
+AIRepr evaluates reproducibility directly, aligning with Cogitator's goal of treating
+reproducibility as a measurable property.\\cite{airepr-2025}
+We also draw inspiration from reproducible builds (e.g., Nix), transparency logs, and
+record/replay debugging in systems engineering.\\cite{nix-reproducible-builds,transparency-logs,rr-debugging}
+
+\\section{Evaluation and Demo}
+\\paragraph{Drift regression demo.}
+We provide a self-contained CLI demo (\\texttt{cogitator demo drift}) that runs a baseline
+agent and a regressed agent. Both emit the same final decision, but the regressed agent
+mutates tool-call arguments. Drift detection flags the mismatch with a structured
+report containing step indices and mismatch taxonomy (ordering/request/response/hash).
+
+\\paragraph{Hardware scaling determinism check.}
+Cogitator can benchmark a workload across multiple thread counts (\\texttt{cogitator bench
+--threads 1,2,4 --repeat R --determinism-check}). The determinism check asserts that the
+witness root and trace artifacts are identical across thread counts, while timing and
+throughput are reported separately and never committed to witness roots.
+
+\\bibliographystyle{plain}
+\\bibliography{cogitator_paper}
+\\end{document}

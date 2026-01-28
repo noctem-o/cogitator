@@ -2,13 +2,15 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use sha2::{Digest, Sha256};
 
-use crate::agent::Agent;
+use crate::agent::{Agent, ClawdbotVariant};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod agent;
+mod bench;
+mod demo;
 mod drift;
 mod eval;
 mod model;
@@ -36,6 +38,8 @@ pub struct Cli {
 pub enum CommandLine {
     Run(RunArgs),
     Verify(VerifyArgs),
+    Demo(DemoArgs),
+    Bench(BenchArgs),
 }
 
 /// Run a deterministic evaluation and emit artifacts.
@@ -63,6 +67,9 @@ pub struct RunArgs {
     pub parallel: bool,
 
     #[arg(long)]
+    pub threads: Option<usize>,
+
+    #[arg(long)]
     pub created_at: Option<String>,
 
     #[arg(long)]
@@ -70,6 +77,55 @@ pub struct RunArgs {
 
     #[arg(long)]
     pub replay: Option<PathBuf>,
+}
+
+/// Demo scenarios that illustrate drift detection.
+#[derive(Args, Debug)]
+pub struct DemoArgs {
+    #[command(subcommand)]
+    pub scenario: DemoScenario,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DemoScenario {
+    Drift(DemoDriftArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct DemoDriftArgs {
+    #[arg(long, default_value_t = 42)]
+    pub seed: u64,
+
+    #[arg(long, default_value = "demo_drift")]
+    pub out_dir: PathBuf,
+
+    #[arg(long)]
+    pub clean: bool,
+}
+
+/// Benchmark and determinism validation.
+#[derive(Args, Debug)]
+pub struct BenchArgs {
+    #[arg(long, default_value_t = 42)]
+    pub seed: u64,
+
+    #[arg(long, default_value_t = 5000)]
+    pub runs: u32,
+
+    #[arg(long, value_delimiter = ',', default_value = "1,2,4")]
+    pub threads: Vec<usize>,
+
+    #[arg(long, default_value_t = 3)]
+    pub repeat: u32,
+
+    #[arg(long, default_value = "bench")]
+    pub out_dir: PathBuf,
+
+    #[arg(long)]
+    pub clean: bool,
+
+    #[arg(long)]
+    pub determinism_check: bool,
 }
 
 /// Verify a trace against an expected witness root.
@@ -94,6 +150,8 @@ fn main() -> Result<()> {
     match cli.command {
         CommandLine::Run(args) => run(args),
         CommandLine::Verify(args) => verify_cmd(args),
+        CommandLine::Demo(args) => run_demo(args),
+        CommandLine::Bench(args) => run_bench(args),
     }
 }
 
@@ -107,7 +165,8 @@ fn run(args: RunArgs) -> Result<()> {
         None => (0..args.runs).collect(),
     };
 
-    let output = eval::run_with_trace(args.seed, &run_ids, args.parallel);
+    let threads = resolve_threads(&args);
+    let output = eval::run_with_trace(args.seed, &run_ids, args.parallel, threads)?;
     let (summary, pass_count, fail_count) = eval::summarize_with_counts(&output.results);
 
     if args.clean && args.out_dir.exists() {
@@ -124,7 +183,7 @@ fn run(args: RunArgs) -> Result<()> {
     let trace_path = args.out_dir.join("trace.jsonl");
     write_trace(&trace_path, &output.trace)?;
 
-    let witness_root = compute_witness_root(&metadata.witnessed, &output.trace)?;
+    let witness_root = witness::compute_witness_root(&metadata.witnessed, &output.trace)?;
     let witness_path = args.out_dir.join("witness_root.txt");
     fs::write(&witness_path, format!("{}\n", witness_root))
         .with_context(|| "failed to write witness_root.txt")?;
@@ -206,6 +265,26 @@ fn run(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
+struct ReplayBundle {
+    manifest: model::WitnessManifest,
+    transcript: tooling::ToolTranscriptRecord,
+}
+
+fn load_replay_bundle(path: &Path) -> Result<ReplayBundle> {
+    let manifest_path = path.join("witness_manifest.json");
+    let manifest_file =
+        File::open(&manifest_path).with_context(|| "failed to open witness_manifest.json")?;
+    let manifest: model::WitnessManifest = serde_json::from_reader(manifest_file)
+        .with_context(|| "failed to parse witness_manifest.json")?;
+
+    let transcript_path = drift::artifact_path(&manifest, "tool_transcript.json")?;
+    let transcript = tooling::read_transcript(Path::new(&transcript_path))?;
+    Ok(ReplayBundle {
+        manifest,
+        transcript,
+    })
+}
+
 fn run_agent(args: RunArgs) -> Result<()> {
     let run_ids: Vec<u32> = match args.case {
         Some(case_id) => vec![case_id],
@@ -222,17 +301,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
     fs::create_dir_all(&args.out_dir).with_context(|| "failed to create output dir")?;
 
     let replay_bundle = if let Some(replay_dir) = args.replay.as_ref() {
-        let manifest_path = replay_dir.join("witness_manifest.json");
-        let manifest_file =
-            File::open(&manifest_path).with_context(|| "failed to open witness_manifest.json")?;
-        let manifest: model::WitnessManifest = serde_json::from_reader(manifest_file)
-            .with_context(|| "failed to parse witness_manifest.json")?;
-        let transcript = tooling::read_transcript(Path::new(&manifest.tool_transcript_json))?;
-        let agent_trace_file = File::open(&manifest.agent_trace_json)
-            .with_context(|| "failed to open agent_trace.json")?;
-        let agent_trace: Vec<agent::AgentTraceEntry> = serde_json::from_reader(agent_trace_file)
-            .with_context(|| "failed to parse agent_trace.json")?;
-        Some((manifest, transcript, agent_trace))
+        Some(load_replay_bundle(replay_dir)?)
     } else {
         None
     };
@@ -240,13 +309,15 @@ fn run_agent(args: RunArgs) -> Result<()> {
     let agent_name = args.agent.clone().or_else(|| {
         replay_bundle
             .as_ref()
-            .map(|(manifest, _, _)| manifest.agent.clone())
+            .map(|bundle| bundle.manifest.agent.clone())
     });
     let agent_name = agent_name.unwrap_or_else(|| "clawdbot".to_string());
 
-    if agent_name != "clawdbot" {
-        anyhow::bail!("unsupported agent: {}", agent_name);
-    }
+    let agent_variant = match agent_name.as_str() {
+        "clawdbot" => ClawdbotVariant::Baseline,
+        "clawdbot-regressed" => ClawdbotVariant::Regressed,
+        _ => anyhow::bail!("unsupported agent: {}", agent_name),
+    };
 
     let tui_enabled = !args.no_tui && cfg!(feature = "tui");
 
@@ -261,23 +332,29 @@ fn run_agent(args: RunArgs) -> Result<()> {
         let meta_path = run_dir.join("meta.json");
         write_json(&meta_path, &metadata, "meta.json")?;
 
-        let mut tool_transcript = if let Some((_, transcript, _)) = replay_bundle.as_ref() {
-            tooling::ToolTranscript::new_replay(transcript.clone())
+        let mut tool_transcript = if let Some(bundle) = replay_bundle.as_ref() {
+            tooling::ToolTranscript::new_replay(bundle.transcript.clone())
         } else {
             tooling::ToolTranscript::new_live()
         };
 
-        let mut agent = agent::ClawdbotAgent::new(args.seed);
+        let mut agent = agent::ClawdbotAgent::new(args.seed, agent_variant);
         let mut agent_trace = Vec::new();
         let mut prior_outputs = Vec::new();
 
         const MAX_STEPS: u32 = 8;
         for step in 0..MAX_STEPS {
-            let input = agent::AgentInput {
+            let case_context = agent::AgentCaseContext {
                 run_id,
                 case_id: case_id.clone(),
+                notes: "deterministic demo case".to_string(),
+            };
+            let input = agent::AgentInput {
+                case_context,
                 step,
                 seed: args.seed,
+                run_metadata: metadata.clone(),
+                transcript: tool_transcript.handle(),
                 prior_tool_outputs: prior_outputs.clone(),
             };
             let output = agent.step(input);
@@ -306,11 +383,10 @@ fn run_agent(args: RunArgs) -> Result<()> {
         fs::write(&hash_chain_path, hash_chain.join("\n") + "\n")
             .with_context(|| "failed to write hash_chain.txt")?;
 
-        let drift_report = if let Some((_, expected_transcript, _)) = replay_bundle.as_ref() {
-            let mut report =
-                drift::detect_transcript_drift(expected_transcript, &transcript_record);
-            for issue in mismatches {
-                report.issues.push(issue);
+        let drift_report = if let Some(bundle) = replay_bundle.as_ref() {
+            let mut report = drift::detect_transcript_drift(&bundle.transcript, &transcript_record);
+            for mismatch in mismatches.iter() {
+                report.issues.push(drift::issue_from_mismatch(mismatch));
             }
             report.drifted = report.drifted || !report.issues.is_empty();
             report
@@ -318,12 +394,41 @@ fn run_agent(args: RunArgs) -> Result<()> {
             drift::DriftReport {
                 schema_version: drift::DRIFT_SCHEMA_VERSION,
                 drifted: !mismatches.is_empty(),
-                issues: mismatches,
+                issues: mismatches.iter().map(drift::issue_from_mismatch).collect(),
             }
         };
 
         let drift_report_path = run_dir.join("drift_report.json");
         write_json(&drift_report_path, &drift_report, "drift_report.json")?;
+
+        let artifacts = vec![
+            model::WitnessArtifact {
+                name: "meta.json".to_string(),
+                path: meta_path.display().to_string(),
+                blake3: drift::hash_file(&meta_path)?,
+            },
+            model::WitnessArtifact {
+                name: "agent_trace.json".to_string(),
+                path: agent_trace_path.display().to_string(),
+                blake3: drift::hash_file(&agent_trace_path)?,
+            },
+            model::WitnessArtifact {
+                name: "tool_transcript.json".to_string(),
+                path: tool_transcript_path.display().to_string(),
+                blake3: drift::hash_file(&tool_transcript_path)?,
+            },
+            model::WitnessArtifact {
+                name: "drift_report.json".to_string(),
+                path: drift_report_path.display().to_string(),
+                blake3: drift::hash_file(&drift_report_path)?,
+            },
+            model::WitnessArtifact {
+                name: "hash_chain.txt".to_string(),
+                path: hash_chain_path.display().to_string(),
+                blake3: drift::hash_file(&hash_chain_path)?,
+            },
+        ];
+        let bundle_hash = drift::bundle_hash(&artifacts)?;
 
         let witness_manifest = model::WitnessManifest {
             schema_version: model::WITNESS_MANIFEST_SCHEMA_VERSION,
@@ -333,11 +438,15 @@ fn run_agent(args: RunArgs) -> Result<()> {
                 tooling::ToolMode::Live => "live".to_string(),
                 tooling::ToolMode::Replay => "replay".to_string(),
             },
-            meta_json: meta_path.display().to_string(),
-            agent_trace_json: agent_trace_path.display().to_string(),
-            tool_transcript_json: tool_transcript_path.display().to_string(),
-            drift_report_json: drift_report_path.display().to_string(),
-            hash_chain_txt: hash_chain_path.display().to_string(),
+            artifacts,
+            schema_versions: model::BundleSchemaVersions {
+                witness_manifest: model::WITNESS_MANIFEST_SCHEMA_VERSION,
+                agent_trace: agent::AGENT_TRACE_SCHEMA_VERSION,
+                tool_transcript: tooling::TOOL_TRANSCRIPT_SCHEMA_VERSION,
+                drift_report: drift::DRIFT_SCHEMA_VERSION,
+                hash_chain: 1,
+            },
+            bundle_hash,
             replay_source: args.replay.as_ref().map(|path| path.display().to_string()),
         };
 
@@ -400,6 +509,55 @@ fn run_agent(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
+fn run_demo(args: DemoArgs) -> Result<()> {
+    match args.scenario {
+        DemoScenario::Drift(config) => demo::run_drift_demo(config),
+    }
+}
+
+fn run_bench(args: BenchArgs) -> Result<()> {
+    if args.clean && args.out_dir.exists() {
+        fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean bench output dir")?;
+    }
+    fs::create_dir_all(&args.out_dir).with_context(|| "failed to create bench output dir")?;
+
+    let build_info = bench::BenchBuildInfo {
+        git_rev: git_rev(),
+        rustc_version: command_version("rustc"),
+        cargo_version: command_version("cargo"),
+        nix_store_path: std::env::var("NIX_STORE").ok(),
+    };
+
+    let report = bench::run_bench(
+        bench::BenchConfig {
+            seed: args.seed,
+            runs: args.runs,
+            threads: args.threads.clone(),
+            repeat: args.repeat,
+            determinism_check: args.determinism_check,
+        },
+        build_info,
+    )?;
+
+    let json_path = args.out_dir.join("bench.json");
+    write_json(&json_path, &report, "bench.json")?;
+
+    let csv_path = args.out_dir.join("bench.csv");
+    bench::write_csv(&csv_path, &report)?;
+
+    println!("Bench artifacts:");
+    println!("  bench.json: {}", json_path.display());
+    println!("  bench.csv: {}", csv_path.display());
+    println!(
+        "Bench complete: threads={} repeat={} runs={}",
+        report.entries.len(),
+        report.repeat,
+        report.runs
+    );
+
+    Ok(())
+}
+
 fn verify_cmd(args: VerifyArgs) -> Result<()> {
     if let Some(ref witness) = args.witness {
         if witness.is_dir() {
@@ -432,21 +590,6 @@ fn write_trace(path: &Path, events: &[model::TraceEvent]) -> Result<()> {
 
     writer.flush()?;
     Ok(())
-}
-
-fn compute_witness_root(
-    metadata: &model::WitnessedMetadata,
-    events: &[model::TraceEvent],
-) -> Result<String> {
-    let metadata_bytes = trace::encode_witnessed_metadata(metadata)?;
-    let mut witness = witness::Witness::new(&metadata_bytes)?;
-
-    for event in events {
-        let event_bytes = trace::encode_event(event)?;
-        witness.update(&event_bytes)?;
-    }
-
-    Ok(witness.finalize_hex())
 }
 
 fn write_json<T: serde::Serialize>(path: &Path, value: &T, label: &str) -> Result<()> {
@@ -557,6 +700,18 @@ fn parallel_strategy(parallel: bool) -> String {
     }
 }
 
+fn resolve_threads(args: &RunArgs) -> usize {
+    if !args.parallel {
+        return 1;
+    }
+    if let Some(threads) = args.threads {
+        return threads.max(1);
+    }
+    std::thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(1)
+}
+
 fn derive_case_id(seed: u64, run_id: u32) -> String {
     let mut hasher = Sha256::new();
     hasher.update(seed.to_le_bytes());
@@ -617,4 +772,63 @@ fn command_version(command: &str) -> Option<String> {
 fn read_trimmed(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path).with_context(|| "failed to read witness file")?;
     Ok(content.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn determinism_across_threads() -> Result<()> {
+        let seed = 42;
+        let run_ids: Vec<u32> = (0..128).collect();
+        let mut roots = Vec::new();
+
+        for threads in [1_usize, 2, 4] {
+            let output = eval::run_with_trace(seed, &run_ids, true, threads)?;
+            let metadata = model::WitnessedMetadata {
+                schema_version: model::TRACE_SCHEMA_VERSION,
+                seed,
+                requested_runs: run_ids.len() as u32,
+                executed_runs: run_ids.len() as u32,
+                parallel: true,
+                parallel_strategy: "rayon/ordered-run-ids".to_string(),
+                case_filter: None,
+                entropy_sources: vec!["rng:StdRng(seed)".to_string()],
+                total_rng_calls: output.total_rng_calls,
+            };
+            let root = witness::compute_witness_root(&metadata, &output.trace)?;
+            roots.push(root);
+        }
+
+        assert!(roots.iter().all(|root| root == &roots[0]));
+        Ok(())
+    }
+
+    #[test]
+    fn drift_demo_flags_regression() -> Result<()> {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let out_dir = PathBuf::from("target/test_drift_demo").join(format!("case_{}", id));
+
+        let args = DemoDriftArgs {
+            seed: 4242,
+            out_dir: out_dir.clone(),
+            clean: true,
+        };
+        demo::run_drift_demo(args)?;
+
+        let drift_path = out_dir
+            .join("regressed")
+            .join("run_0000")
+            .join("drift_report.json");
+        let drift_file = File::open(&drift_path).with_context(|| "failed to open drift report")?;
+        let drift_report: drift::DriftReport =
+            serde_json::from_reader(drift_file).with_context(|| "failed to parse drift report")?;
+
+        assert!(drift_report.drifted);
+        assert!(!drift_report.issues.is_empty());
+        Ok(())
+    }
 }

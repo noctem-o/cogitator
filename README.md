@@ -6,6 +6,31 @@ reproducible the way git makes code reproducible. It captures full causal traces
 entropy usage where applicable, and packages run artifacts so that third parties can
 recompute the same witness root from the same inputs and environment.
 
+## Why this is new
+
+- **Tool-level determinism as a scientific object**: Cogitator turns agent tool usage into
+  a replayable, hashed witness bundle that can be independently verified, not just scored.
+- **Drift detection beyond coarse metrics**: regressions that preserve final scores are
+  still caught through tool transcript mismatches and hash-chain divergence.
+- **Determinism across hardware scaling**: witness roots remain identical even as thread
+  counts change, enabling fair comparisons across machines.
+- **Bundle-first verification**: manifests include hashes and schema versions for all
+  bundle artifacts, enabling audit-style verification workflows.
+
+## Related work (positioning)
+
+- *Evaluation and Benchmarking of LLM Agents: A Survey* (arXiv, 2025) — broad landscape of
+  agent evaluation settings and metrics.
+- *ARE: scaling up agent environments and evaluations* (arXiv, 2025) — infrastructure
+  framing for large-scale agent evaluation.
+- *Replayable Financial Agents: A Determinism-Faithfulness Assurance Harness (DFAH)*
+  (arXiv, Jan 2026) — closest conceptual neighbor; Cogitator adds witness-root + bundle
+  verification for tool traces.
+- *AIRepr: An Analyst-Inspector Framework…* (Findings EMNLP 2025) — treats reproducibility
+  as an evaluated property.
+- Classic anchors: reproducible builds (Nix), transparency logs, record/replay debugging,
+  Merkle-tree integrity commitments.
+
 ## What’s new in this repo
 
 This implementation expands on the original paper with additional operational features:
@@ -37,7 +62,7 @@ cargo build
 ### Run deterministic evaluations
 
 ```bash
-./target/debug/cogitator run --seed 42 --runs 100 --out-dir out
+./target/debug/cogitator run --seed 42 --runs 100 --out-dir out --threads 4
 ```
 
 Outputs include:
@@ -107,6 +132,40 @@ Verify a witness bundle (agent mode):
 ./target/debug/cogitator verify --witness out/run_0000
 ```
 
+## Demo: regression caught by drift detection
+
+Run the built-in drift demo:
+
+```bash
+./target/debug/cogitator demo drift --out-dir demo_drift
+```
+
+Expected high-level output (abbreviated):
+
+```
+Drift demo output:
+  baseline: demo_drift/baseline
+  regressed: demo_drift/regressed
+  drifted: true
+  issues:
+    - index 0 step Some(0) RequestMismatch (tool request mismatch at index 0)
+```
+
+The baseline and regressed agents both emit the same final decision, but the regressed
+version mutates tool-call arguments. Drift detection flags the mismatch even though a
+coarse “pass/fail” check would look identical.
+
+## Hardware scaling + determinism validation
+
+Run the benchmark suite with explicit threads and a determinism check:
+
+```bash
+./target/debug/cogitator bench --runs 5000 --threads 1,2,4 --repeat 3 --determinism-check
+```
+
+This emits `bench.json` and `bench.csv` with throughput and witness roots, and fails
+fast if witness roots or trace artifacts diverge across thread counts.
+
 ## TUI support
 
 The TUI is feature-gated. Enable it with:
@@ -124,6 +183,8 @@ Use `--no-tui` to suppress the interface when running in CI or headless contexts
 - `src/witness.rs` – witness root builder
 - `src/verify.rs` – trace verification
 - `src/agent.rs` – example deterministic agent implementation
+- `src/bench.rs` – hardware scaling benchmarks + determinism checks
+- `src/demo.rs` – reproducible drift regression demo
 - `src/tooling.rs` – tool transcript recording/replay
 - `src/drift.rs` – drift detection + witness bundle verification
 - `src/tui.rs` – terminal UI (feature gated)

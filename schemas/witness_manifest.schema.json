@@ -8,22 +8,47 @@
     "run_id",
     "agent",
     "mode",
-    "meta_json",
-    "agent_trace_json",
-    "tool_transcript_json",
-    "drift_report_json",
-    "hash_chain_txt"
+    "artifacts",
+    "schema_versions",
+    "bundle_hash"
   ],
   "properties": {
     "schema_version": { "type": "integer", "minimum": 1 },
     "run_id": { "type": "integer", "minimum": 0 },
     "agent": { "type": "string" },
     "mode": { "type": "string", "enum": ["live", "replay"] },
-    "meta_json": { "type": "string" },
-    "agent_trace_json": { "type": "string" },
-    "tool_transcript_json": { "type": "string" },
-    "drift_report_json": { "type": "string" },
-    "hash_chain_txt": { "type": "string" },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "blake3"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "blake3": { "type": "string" }
+        }
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "witness_manifest",
+        "agent_trace",
+        "tool_transcript",
+        "drift_report",
+        "hash_chain"
+      ],
+      "properties": {
+        "witness_manifest": { "type": "integer", "minimum": 1 },
+        "agent_trace": { "type": "integer", "minimum": 1 },
+        "tool_transcript": { "type": "integer", "minimum": 1 },
+        "drift_report": { "type": "integer", "minimum": 1 },
+        "hash_chain": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "bundle_hash": { "type": "string" },
     "replay_source": { "type": ["string", "null"] }
   }
 }

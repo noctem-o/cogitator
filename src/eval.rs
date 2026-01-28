@@ -29,18 +29,32 @@ pub fn run_sequential(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
 
 /// Parallel evaluation (deterministic ordering by run_id)
 pub fn run_parallel(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
-    run_with_trace(seed, run_ids, true).results
+    run_with_trace(seed, run_ids, true, 1)
+        .expect("run_with_trace failed")
+        .results
 }
 
 /// Run evaluation with a canonical trace and entropy accounting.
-pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
+pub fn run_with_trace(
+    seed: u64,
+    run_ids: &[u32],
+    parallel: bool,
+    threads: usize,
+) -> Result<RunOutput> {
     let n = run_ids.len();
     let mut runs: Vec<Option<CaseRun>> = (0..n).map(|_| None).collect();
 
     if parallel {
-        runs.par_iter_mut().enumerate().for_each(|(i, slot)| {
-            let run_id = run_ids[i];
-            *slot = Some(evaluate_case(seed, run_id));
+        let threads = threads.max(1);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .context("build rayon thread pool")?;
+        pool.install(|| {
+            runs.par_iter_mut().enumerate().for_each(|(i, slot)| {
+                let run_id = run_ids[i];
+                *slot = Some(evaluate_case(seed, run_id));
+            });
         });
     } else {
         for (i, run_id) in run_ids.iter().copied().enumerate() {
@@ -61,11 +75,11 @@ pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
 
     trace.sort_by_key(|event| (event.run_id, event.step));
 
-    RunOutput {
+    Ok(RunOutput {
         results,
         trace,
         total_rng_calls,
-    }
+    })
 }
 
 /// Evaluate one deterministic case

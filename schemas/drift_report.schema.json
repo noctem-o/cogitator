@@ -7,6 +7,29 @@
   "properties": {
     "schema_version": { "type": "integer", "minimum": 1 },
     "drifted": { "type": "boolean" },
-    "issues": { "type": "array", "items": { "type": "string" } }
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "kind", "message"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "step": { "type": ["integer", "null"], "minimum": 0 },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ordering_mismatch",
+              "request_mismatch",
+              "response_mismatch",
+              "output_hash_mismatch"
+            ]
+          },
+          "message": { "type": "string" },
+          "expected": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+          "actual": { "type": ["object", "array", "string", "number", "boolean", "null"] }
+        }
+      }
+    }
   }
 }

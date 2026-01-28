@@ -90,7 +90,7 @@ pub struct ProvenanceMetadata {
     pub variability_factors: Vec<String>,
 }
 
-pub const WITNESS_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const WITNESS_MANIFEST_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,12 +99,28 @@ pub struct WitnessManifest {
     pub run_id: u32,
     pub agent: String,
     pub mode: String,
-    pub meta_json: String,
-    pub agent_trace_json: String,
-    pub tool_transcript_json: String,
-    pub drift_report_json: String,
-    pub hash_chain_txt: String,
+    pub artifacts: Vec<WitnessArtifact>,
+    pub schema_versions: BundleSchemaVersions,
+    pub bundle_hash: String,
     pub replay_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessArtifact {
+    pub name: String,
+    pub path: String,
+    pub blake3: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleSchemaVersions {
+    pub witness_manifest: u32,
+    pub agent_trace: u32,
+    pub tool_transcript: u32,
+    pub drift_report: u32,
+    pub hash_chain: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
