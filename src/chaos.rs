@@ -97,6 +97,7 @@ impl ChaosEngine {
             + self.profile.rates.drop_per_million as u64
             + self.profile.rates.corrupt_per_million as u64
             + self.profile.rates.latency_sim_per_million as u64;
+        let total = total.min(PER_MILLION);
 
         if total == 0 {
             return None;
@@ -315,6 +316,9 @@ fn corrupt_value(value: serde_json::Value, mask: u64) -> serde_json::Value {
                     .enumerate()
                     .filter_map(|(idx, b)| b.is_ascii().then_some(idx))
                     .collect();
+                if ascii_positions.is_empty() {
+                    return serde_json::Value::String(s);
+                }
                 if let Some(&idx) = ascii_positions.get((mask as usize) % ascii_positions.len()) {
                     let mut bytes = bytes.to_vec();
                     bytes[idx] ^= 0x1;
@@ -356,5 +360,44 @@ fn corrupt_value(value: serde_json::Value, mask: u64) -> serde_json::Value {
             serde_json::Value::Object(map)
         }
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corrupt_value_handles_empty_string() {
+        let input = serde_json::Value::String(String::new());
+        let output = corrupt_value(input, 42);
+        assert!(matches!(output, serde_json::Value::String(_)));
+    }
+
+    #[test]
+    fn corrupt_value_handles_non_ascii_string() {
+        let input = serde_json::Value::String("你好世界".to_string());
+        let output = corrupt_value(input, 7);
+        assert!(matches!(output, serde_json::Value::String(_)));
+    }
+
+    #[test]
+    fn decide_fault_caps_total_rate() {
+        let profile = ChaosProfile {
+            schema_version: CHAOS_PROFILE_SCHEMA_VERSION,
+            schedule_version: CHAOS_SCHEDULE_VERSION,
+            enabled: true,
+            profile: "test".to_string(),
+            seed: 123,
+            rates: FaultRates {
+                timeout_per_million: 900_000,
+                corrupt_per_million: 200_000,
+                drop_per_million: 200_000,
+                latency_sim_per_million: 200_000,
+            },
+        };
+        let engine = ChaosEngine::new(profile, 0);
+        let fault = engine.decide_fault(1, 0, "tool");
+        assert!(fault.is_some());
     }
 }
