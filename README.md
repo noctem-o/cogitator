@@ -6,11 +6,11 @@ reproducible the way git makes code reproducible. It captures full causal traces
 entropy usage where applicable, and packages run artifacts so that third parties can
 recompute the same witness root from the same inputs and environment.
 
-## Recent changes and upgrades
+## Feature list
 
-This implementation expands on the original paper with additional operational features
-and auditability improvements:
-
+- **Deterministic execution** with explicit entropy accounting (where applicable) and ordered
+  trace emission.
+- **Witness roots** (BLAKE3) that commit to every event in a run’s trace.
 - **Deterministic agent mode** with tool transcript recording + replay for byte-stable
   re-execution.
 - **Drift detection** that compares replayed tool calls against recorded transcripts and
@@ -19,25 +19,14 @@ and auditability improvements:
   manifests for offline verification workflows.
 - **Hash-chain auditing** for agent traces + tool calls, separate from the global witness
   root.
-- **Deterministic Simulation Testing (DST)-style fault injection** that records chaos
-  schedules and preserves replay determinism.
-- **Witness/provenance split** so runtime environment details stay out of witness
-  commitments while remaining discoverable.
-- **Canonical JSON artifacts** to keep audit artifacts byte-stable across runs.
-- **Optional TUI** for inspecting run summaries and drift status (feature-flagged).
-
-## Key capabilities
-
-- **Deterministic execution** with explicit entropy accounting (where applicable) and ordered
-  trace emission.
-- **Witness roots** (BLAKE3) that commit to every event in a run’s trace.
 - **Reproducible run metadata** capturing seed, run counts, parallel strategy, and provenance.
 - **Artifact manifests** for programmatic consumption of outputs.
 - **Deterministic Simulation Testing (DST)-style fault injection** for reproducible chaos
   testing, with fault schedules committed to the witness metadata.
-- **Canonical JSON artifacts** for byte-stable audit trails.
-- **Witness/provenance split** so environment and thread details stay out of witnessed
+- **Witness/provenance split** so runtime environment details stay out of witness
   commitments while remaining discoverable.
+- **Canonical JSON artifacts** to keep audit artifacts byte-stable across runs.
+- **Optional TUI** for inspecting run summaries and drift status (feature-flagged).
 
 ## Commitment boundaries (witness vs provenance)
 
