@@ -129,6 +129,9 @@ pub fn launch(
             if let Some(path) = &manifest.drift_report_json {
                 artifact_text.push(Line::from(format!("drift_report.json → {}", path)));
             }
+            if let Some(path) = &manifest.chaos_profile_json {
+                artifact_text.push(Line::from(format!("chaos_profile.json → {}", path)));
+            }
             let artifact_block = Paragraph::new(artifact_text)
                 .block(
                     Block::default()
@@ -297,6 +300,9 @@ pub fn launch_agent(
             }
             if let Some(path) = &manifest.drift_report_json {
                 artifact_text.push(Line::from(format!("drift_report.json → {}", path)));
+            }
+            if let Some(path) = &manifest.chaos_profile_json {
+                artifact_text.push(Line::from(format!("chaos_profile.json → {}", path)));
             }
             artifact_text.push(Line::from("Press q to exit."));
 

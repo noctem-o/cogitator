@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-pub const TOOL_TRANSCRIPT_SCHEMA_VERSION: u32 = 1;
+use crate::chaos::{apply_fault, ChaosEngine, FaultRecord};
+use crate::canonical_json;
+
+pub const TOOL_TRANSCRIPT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -18,14 +21,19 @@ pub struct ToolResponse {
     pub tool_name: String,
     pub output: serde_json::Value,
     pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub simulated_latency_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ToolCall {
     pub step: u32,
+    pub tool_call_idx: u32,
     pub request: ToolRequest,
     pub response: ToolResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fault: Option<FaultRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,16 +57,20 @@ pub struct ToolTranscript {
     recorded: Vec<ToolCall>,
     cursor: usize,
     mismatches: Vec<String>,
+    chaos: Option<ChaosEngine>,
+    next_call_idx: u32,
 }
 
 impl ToolTranscript {
-    pub fn new_live() -> Self {
+    pub fn new_live(chaos: Option<ChaosEngine>) -> Self {
         Self {
             mode: ToolMode::Live,
             expected: Vec::new(),
             recorded: Vec::new(),
             cursor: 0,
             mismatches: Vec::new(),
+            chaos,
+            next_call_idx: 0,
         }
     }
 
@@ -69,6 +81,8 @@ impl ToolTranscript {
             recorded: Vec::new(),
             cursor: 0,
             mismatches: Vec::new(),
+            chaos: None,
+            next_call_idx: 0,
         }
     }
 
@@ -81,13 +95,26 @@ impl ToolTranscript {
     }
 
     pub fn execute(&mut self, step: u32, request: ToolRequest) -> ToolResponse {
+        let tool_call_idx = self.next_call_idx;
+        self.next_call_idx = self.next_call_idx.saturating_add(1);
         match self.mode {
             ToolMode::Live => {
-                let response = stub_response(&request);
+                let mut response = stub_response(&request);
+                let fault = if let Some(chaos) = &self.chaos {
+                    chaos.decide_fault(step, tool_call_idx, &request.tool_name)
+                } else {
+                    None
+                };
+                if let Some(fault_record) = fault.as_ref() {
+                    response =
+                        apply_fault(&request, response, fault_record).unwrap_or(response);
+                }
                 self.recorded.push(ToolCall {
                     step,
+                    tool_call_idx,
                     request,
                     response: response.clone(),
+                    fault,
                 });
                 response
             }
@@ -97,6 +124,12 @@ impl ToolTranscript {
                         self.mismatches.push(format!(
                             "tool step mismatch: expected {}, got {}",
                             expected.step, step
+                        ));
+                    }
+                    if expected.tool_call_idx != tool_call_idx {
+                        self.mismatches.push(format!(
+                            "tool call index mismatch: expected {}, got {}",
+                            expected.tool_call_idx, tool_call_idx
                         ));
                     }
                     if expected.request != request {
@@ -111,8 +144,13 @@ impl ToolTranscript {
                 };
                 self.recorded.push(ToolCall {
                     step,
+                    tool_call_idx,
                     request,
                     response: response.clone(),
+                    fault: self
+                        .expected
+                        .get(self.cursor)
+                        .and_then(|expected| expected.fault.clone()),
                 });
                 self.cursor += 1;
                 response
@@ -149,9 +187,7 @@ pub fn read_transcript(path: &Path) -> Result<ToolTranscriptRecord> {
 }
 
 pub fn write_transcript(path: &Path, record: &ToolTranscriptRecord) -> Result<()> {
-    let file = std::fs::File::create(path).with_context(|| "failed to write tool transcript")?;
-    serde_json::to_writer_pretty(file, record)
-        .with_context(|| "failed to serialize tool transcript")?;
+    canonical_json::write_json(path, record, "tool transcript")?;
     Ok(())
 }
 
@@ -169,6 +205,7 @@ fn stub_response(request: &ToolRequest) -> ToolResponse {
             "hash": hash,
         }),
         success: true,
+        simulated_latency_ms: None,
     }
 }
 

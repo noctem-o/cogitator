@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
 
 use crate::agent::Agent;
@@ -8,6 +8,8 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod canonical_json;
+mod chaos;
 mod agent;
 mod drift;
 mod eval;
@@ -36,6 +38,49 @@ pub struct Cli {
 pub enum CommandLine {
     Run(RunArgs),
     Verify(VerifyArgs),
+    Demo(DemoArgs),
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum FaultToggle {
+    On,
+    Off,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum FaultProfile {
+    None,
+    Ci,
+    Stress,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DemoCommand {
+    Drift(DemoDriftArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct DemoArgs {
+    #[command(subcommand)]
+    pub command: DemoCommand,
+}
+
+#[derive(Args, Debug)]
+pub struct DemoDriftArgs {
+    #[arg(long, default_value_t = 42)]
+    pub seed: u64,
+
+    #[arg(long, default_value = "demo_out")]
+    pub out_dir: PathBuf,
+
+    #[arg(long, default_value = "stress", value_enum)]
+    pub fault_profile: FaultProfile,
+
+    #[arg(long, default_value_t = 1)]
+    pub threads: usize,
+
+    #[arg(long)]
+    pub clean: bool,
 }
 
 /// Run a deterministic evaluation and emit artifacts.
@@ -70,6 +115,24 @@ pub struct RunArgs {
 
     #[arg(long)]
     pub replay: Option<PathBuf>,
+
+    #[arg(long, default_value = "off", value_enum)]
+    pub faults: FaultToggle,
+
+    #[arg(long, default_value = "none", value_enum)]
+    pub fault_profile: FaultProfile,
+
+    #[arg(long)]
+    pub fault_timeout_rate: Option<f64>,
+
+    #[arg(long)]
+    pub fault_corrupt_rate: Option<f64>,
+
+    #[arg(long)]
+    pub fault_drop_rate: Option<f64>,
+
+    #[arg(long)]
+    pub fault_latency_rate: Option<f64>,
 }
 
 /// Verify a trace against an expected witness root.
@@ -94,6 +157,7 @@ fn main() -> Result<()> {
     match cli.command {
         CommandLine::Run(args) => run(args),
         CommandLine::Verify(args) => verify_cmd(args),
+        CommandLine::Demo(args) => demo_cmd(args),
     }
 }
 
@@ -117,9 +181,8 @@ fn run(args: RunArgs) -> Result<()> {
     fs::create_dir_all(&args.out_dir).with_context(|| "failed to create output dir")?;
 
     let metadata = build_metadata(&args, output.total_rng_calls, run_ids.len() as u32);
-    let metadata_bytes = trace::encode_metadata(&metadata)?;
     let meta_path = args.out_dir.join("meta.json");
-    fs::write(&meta_path, &metadata_bytes).with_context(|| "failed to write meta.json")?;
+    canonical_json::write_json(&meta_path, &metadata, "meta.json")?;
 
     let trace_path = args.out_dir.join("trace.jsonl");
     write_trace(&trace_path, &output.trace)?;
@@ -133,10 +196,10 @@ fn run(args: RunArgs) -> Result<()> {
     eval::write_results(&csv_path, &output.results)?;
 
     let results_json_path = args.out_dir.join("results.json");
-    write_json(&results_json_path, &output.results, "results.json")?;
+    canonical_json::write_json(&results_json_path, &output.results, "results.json")?;
 
     let summary_json_path = args.out_dir.join("summary.json");
-    write_json(&summary_json_path, &summary, "summary.json")?;
+    canonical_json::write_json(&summary_json_path, &summary, "summary.json")?;
 
     let manifest = model::ArtifactManifest {
         meta_json: meta_path.display().to_string(),
@@ -151,6 +214,7 @@ fn run(args: RunArgs) -> Result<()> {
         witness_manifest_json: None,
         hash_chain_txt: None,
         drift_report_json: None,
+        chaos_profile_json: None,
     };
 
     let analysis_bundle = model::AnalysisBundle {
@@ -162,7 +226,7 @@ fn run(args: RunArgs) -> Result<()> {
     };
 
     let analysis_path = args.out_dir.join("analysis.json");
-    write_json(&analysis_path, &analysis_bundle, "analysis.json")?;
+    canonical_json::write_json(&analysis_path, &analysis_bundle, "analysis.json")?;
 
     let tui_enabled = !args.no_tui && cfg!(feature = "tui");
     if tui_enabled {
@@ -206,6 +270,153 @@ fn run(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
+fn demo_cmd(args: DemoArgs) -> Result<()> {
+    match args.command {
+        DemoCommand::Drift(args) => demo_drift(args),
+    }
+}
+
+fn demo_drift(args: DemoDriftArgs) -> Result<()> {
+    if args.clean && args.out_dir.exists() {
+        fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean demo output dir")?;
+    }
+    fs::create_dir_all(&args.out_dir).with_context(|| "failed to create demo output dir")?;
+
+    let base_dir = args.out_dir.join("drift");
+    fs::create_dir_all(&base_dir).with_context(|| "failed to create drift demo dir")?;
+
+    let thread_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build()?;
+
+    thread_pool.install(|| {
+        let mut baseline_no_faults = None;
+        let mut baseline_faults = None;
+
+        for (label, faults_enabled, regress) in [
+            ("baseline", false, false),
+            ("regressed", false, true),
+            ("baseline_faults", true, false),
+            ("regressed_faults", true, true),
+        ] {
+            let scenario_dir = base_dir.join(label);
+            fs::create_dir_all(&scenario_dir)
+                .with_context(|| "failed to create drift scenario dir")?;
+
+            let chaos_profile =
+                demo_chaos_profile(args.seed, args.fault_profile.clone(), faults_enabled);
+            let demo_run =
+                run_demo_agent(args.seed, 0, chaos_profile.clone(), regress)?;
+
+            let expected = match (faults_enabled, regress) {
+                (false, true) => baseline_no_faults.as_ref(),
+                (true, true) => baseline_faults.as_ref(),
+                _ => None,
+            };
+
+            let drift_report = if let Some(expected_record) = expected {
+                drift::detect_transcript_drift(expected_record, &demo_run.transcript)
+            } else {
+                drift::DriftReport {
+                    schema_version: drift::DRIFT_SCHEMA_VERSION,
+                    drifted: false,
+                    issues: Vec::new(),
+                }
+            };
+
+            let meta_path = scenario_dir.join("meta.json");
+            canonical_json::write_json(&meta_path, &demo_run.metadata, "meta.json")?;
+
+            let chaos_profile_path = scenario_dir.join("chaos_profile.json");
+            canonical_json::write_json(
+                &chaos_profile_path,
+                &demo_run.chaos_profile,
+                "chaos_profile.json",
+            )?;
+
+            let agent_trace_path = scenario_dir.join("agent_trace.json");
+            canonical_json::write_json(&agent_trace_path, &demo_run.agent_trace, "agent_trace.json")?;
+
+            let tool_transcript_path = scenario_dir.join("tool_transcript.json");
+            tooling::write_transcript(&tool_transcript_path, &demo_run.transcript)?;
+
+            let hash_chain = drift::build_hash_chain(&demo_run.agent_trace, &demo_run.transcript.entries)?;
+            let hash_chain_path = scenario_dir.join("hash_chain.txt");
+            fs::write(&hash_chain_path, hash_chain.join("\n") + "\n")
+                .with_context(|| "failed to write hash_chain.txt")?;
+
+            let witness_root = compute_agent_witness_root(
+                &demo_run.metadata.witnessed,
+                &demo_run.agent_trace,
+                &demo_run.transcript.entries,
+            )?;
+            let witness_root_path = scenario_dir.join("witness_root.txt");
+            fs::write(&witness_root_path, format!("{}\n", witness_root))
+                .with_context(|| "failed to write witness_root.txt")?;
+
+            let drift_report_path = scenario_dir.join("drift_report.json");
+            canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")?;
+
+            let artifact_hashes = drift::artifact_hashes(&[
+                &meta_path,
+                &agent_trace_path,
+                &tool_transcript_path,
+                &drift_report_path,
+                &hash_chain_path,
+                &chaos_profile_path,
+                &witness_root_path,
+            ])?;
+            let bundle_hash = drift::bundle_hash(&artifact_hashes)?;
+
+            let witness_manifest = model::WitnessManifest {
+                schema_version: model::WITNESS_MANIFEST_SCHEMA_VERSION,
+                run_id: 0,
+                agent: "clawdbot".to_string(),
+                mode: if regress { "replay".to_string() } else { "live".to_string() },
+                meta_json: meta_path.display().to_string(),
+                agent_trace_json: agent_trace_path.display().to_string(),
+                tool_transcript_json: tool_transcript_path.display().to_string(),
+                drift_report_json: drift_report_path.display().to_string(),
+                hash_chain_txt: hash_chain_path.display().to_string(),
+                chaos_profile_json: Some(chaos_profile_path.display().to_string()),
+                witness_root_txt: Some(witness_root_path.display().to_string()),
+                artifact_hashes,
+                bundle_hash,
+                replay_source: expected.map(|_| base_dir.join(if faults_enabled { "baseline_faults" } else { "baseline" }).display().to_string()),
+            };
+
+            let witness_manifest_path = scenario_dir.join("witness_manifest.json");
+            canonical_json::write_json(
+                &witness_manifest_path,
+                &witness_manifest,
+                "witness_manifest.json",
+            )?;
+
+            if !regress {
+                if faults_enabled {
+                    baseline_faults = Some(demo_run.transcript.clone());
+                } else {
+                    baseline_no_faults = Some(demo_run.transcript.clone());
+                }
+            }
+
+            println!(
+                "Demo scenario {} (faults_enabled={} regress={}): drifted={}",
+                label, faults_enabled, regress, drift_report.drifted
+            );
+        }
+
+        Ok::<(), anyhow::Error>(())
+    })?;
+
+    println!(
+        "Drift demo complete. Outputs at {}",
+        base_dir.display()
+    );
+
+    Ok(())
+}
+
 fn run_agent(args: RunArgs) -> Result<()> {
     let run_ids: Vec<u32> = match args.case {
         Some(case_id) => vec![case_id],
@@ -237,6 +448,12 @@ fn run_agent(args: RunArgs) -> Result<()> {
         None
     };
 
+    let replay_chaos_profile = replay_bundle
+        .as_ref()
+        .and_then(|(manifest, _, _)| manifest.chaos_profile_json.as_ref())
+        .and_then(|path| File::open(path).ok())
+        .and_then(|file| serde_json::from_reader(file).ok());
+
     let agent_name = args.agent.clone().or_else(|| {
         replay_bundle
             .as_ref()
@@ -257,14 +474,27 @@ fn run_agent(args: RunArgs) -> Result<()> {
         let run_dir = args.out_dir.join(format!("run_{:04}", run_id));
         fs::create_dir_all(&run_dir).with_context(|| "failed to create run dir")?;
 
-        let metadata = build_agent_metadata(&args, 0);
+        let chaos_profile =
+            replay_chaos_profile.clone().unwrap_or_else(|| resolve_chaos_profile(&args, args.seed));
+        let metadata = build_agent_metadata(&args, 0, chaos_profile.clone());
         let meta_path = run_dir.join("meta.json");
-        write_json(&meta_path, &metadata, "meta.json")?;
+        canonical_json::write_json(&meta_path, &metadata, "meta.json")?;
+
+        let chaos_profile_path = run_dir.join("chaos_profile.json");
+        canonical_json::write_json(&chaos_profile_path, &chaos_profile, "chaos_profile.json")?;
+
+        let chaos_engine = if replay_bundle.is_some() {
+            None
+        } else if chaos_profile.enabled {
+            Some(chaos::ChaosEngine::new(chaos_profile.clone(), run_id))
+        } else {
+            None
+        };
 
         let mut tool_transcript = if let Some((_, transcript, _)) = replay_bundle.as_ref() {
             tooling::ToolTranscript::new_replay(transcript.clone())
         } else {
-            tooling::ToolTranscript::new_live()
+            tooling::ToolTranscript::new_live(chaos_engine)
         };
 
         let mut agent = agent::ClawdbotAgent::new(args.seed);
@@ -296,7 +526,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
         let mismatches = tool_transcript.mismatches().to_vec();
         let transcript_record = tool_transcript.into_record();
         let agent_trace_path = run_dir.join("agent_trace.json");
-        write_json(&agent_trace_path, &agent_trace, "agent_trace.json")?;
+        canonical_json::write_json(&agent_trace_path, &agent_trace, "agent_trace.json")?;
 
         let tool_transcript_path = run_dir.join("tool_transcript.json");
         tooling::write_transcript(&tool_transcript_path, &transcript_record)?;
@@ -305,6 +535,15 @@ fn run_agent(args: RunArgs) -> Result<()> {
         let hash_chain_path = run_dir.join("hash_chain.txt");
         fs::write(&hash_chain_path, hash_chain.join("\n") + "\n")
             .with_context(|| "failed to write hash_chain.txt")?;
+
+        let agent_witness_root = compute_agent_witness_root(
+            &metadata.witnessed,
+            &agent_trace,
+            &transcript_record.entries,
+        )?;
+        let agent_witness_path = run_dir.join("witness_root.txt");
+        fs::write(&agent_witness_path, format!("{}\n", agent_witness_root))
+            .with_context(|| "failed to write witness_root.txt")?;
 
         let drift_report = if let Some((_, expected_transcript, _)) = replay_bundle.as_ref() {
             let mut report =
@@ -323,7 +562,18 @@ fn run_agent(args: RunArgs) -> Result<()> {
         };
 
         let drift_report_path = run_dir.join("drift_report.json");
-        write_json(&drift_report_path, &drift_report, "drift_report.json")?;
+        canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")?;
+
+        let artifact_hashes = drift::artifact_hashes(&[
+            &meta_path,
+            &agent_trace_path,
+            &tool_transcript_path,
+            &drift_report_path,
+            &hash_chain_path,
+            &chaos_profile_path,
+            &agent_witness_path,
+        ])?;
+        let bundle_hash = drift::bundle_hash(&artifact_hashes)?;
 
         let witness_manifest = model::WitnessManifest {
             schema_version: model::WITNESS_MANIFEST_SCHEMA_VERSION,
@@ -338,11 +588,15 @@ fn run_agent(args: RunArgs) -> Result<()> {
             tool_transcript_json: tool_transcript_path.display().to_string(),
             drift_report_json: drift_report_path.display().to_string(),
             hash_chain_txt: hash_chain_path.display().to_string(),
+            chaos_profile_json: Some(chaos_profile_path.display().to_string()),
+            witness_root_txt: Some(agent_witness_path.display().to_string()),
+            artifact_hashes,
+            bundle_hash,
             replay_source: args.replay.as_ref().map(|path| path.display().to_string()),
         };
 
         let witness_manifest_path = run_dir.join("witness_manifest.json");
-        write_json(
+        canonical_json::write_json(
             &witness_manifest_path,
             &witness_manifest,
             "witness_manifest.json",
@@ -361,6 +615,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
             witness_manifest_json: Some(witness_manifest_path.display().to_string()),
             hash_chain_txt: Some(hash_chain_path.display().to_string()),
             drift_report_json: Some(drift_report_path.display().to_string()),
+            chaos_profile_json: Some(chaos_profile_path.display().to_string()),
         };
 
         if tui_enabled && single_run {
@@ -389,12 +644,14 @@ fn run_agent(args: RunArgs) -> Result<()> {
         println!("Artifacts:");
         println!("  agent_trace.json: {}", agent_trace_path.display());
         println!("  tool_transcript.json: {}", tool_transcript_path.display());
+        println!("  chaos_profile.json: {}", chaos_profile_path.display());
         println!(
             "  witness_manifest.json: {}",
             witness_manifest_path.display()
         );
         println!("  hash_chain.txt: {}", hash_chain_path.display());
         println!("  drift_report.json: {}", drift_report_path.display());
+        println!("  witness_root.txt: {}", agent_witness_path.display());
     }
 
     Ok(())
@@ -403,8 +660,18 @@ fn run_agent(args: RunArgs) -> Result<()> {
 fn verify_cmd(args: VerifyArgs) -> Result<()> {
     if let Some(ref witness) = args.witness {
         if witness.is_dir() {
-            drift::verify_witness_bundle(witness)?;
-            println!("Verified witness bundle at {}", witness.display());
+            let report = drift::verify_witness_bundle(witness)?;
+            println!(
+                "Verification: verified={} issues={} bundle_hash_expected={} bundle_hash_actual={}",
+                report.verified,
+                report.issues.len(),
+                report.bundle_hash_expected,
+                report.bundle_hash_actual
+            );
+            println!("verify_report.json: {}", witness.join("verify_report.json").display());
+            if !report.verified {
+                anyhow::bail!("witness bundle verification failed");
+            }
             return Ok(());
         }
     }
@@ -449,11 +716,24 @@ fn compute_witness_root(
     Ok(witness.finalize_hex())
 }
 
-fn write_json<T: serde::Serialize>(path: &Path, value: &T, label: &str) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("failed to create {}", label))?;
-    serde_json::to_writer_pretty(file, value)
-        .with_context(|| format!("failed to write {}", label))?;
-    Ok(())
+fn compute_agent_witness_root(
+    metadata: &model::WitnessedMetadata,
+    agent_trace: &[agent::AgentTraceEntry],
+    tool_calls: &[tooling::ToolCall],
+) -> Result<String> {
+    let metadata_bytes = trace::encode_witnessed_metadata(metadata)?;
+    let mut witness = witness::Witness::new(&metadata_bytes)?;
+
+    for entry in agent_trace {
+        let entry_bytes = trace::encode_agent_trace_entry(entry)?;
+        witness.update(&entry_bytes)?;
+        for call in tool_calls.iter().filter(|call| call.step == entry.step) {
+            let call_bytes = trace::encode_tool_call(call)?;
+            witness.update(&call_bytes)?;
+        }
+    }
+
+    Ok(witness.finalize_hex())
 }
 
 fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> model::RunMetadata {
@@ -481,6 +761,7 @@ fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> m
             case_filter: args.case,
             entropy_sources: vec!["rng:StdRng(seed)".to_string()],
             total_rng_calls,
+            chaos_profile: None,
         },
         provenance: model::ProvenanceMetadata {
             created_at,
@@ -493,7 +774,11 @@ fn build_metadata(args: &RunArgs, total_rng_calls: u64, executed_runs: u32) -> m
     }
 }
 
-fn build_agent_metadata(args: &RunArgs, total_rng_calls: u64) -> model::RunMetadata {
+fn build_agent_metadata(
+    args: &RunArgs,
+    total_rng_calls: u64,
+    chaos_profile: chaos::ChaosProfile,
+) -> model::RunMetadata {
     let created_at = resolve_created_at(args);
     let git_rev = git_rev();
     let rustc_version = command_version("rustc");
@@ -519,8 +804,15 @@ fn build_agent_metadata(args: &RunArgs, total_rng_calls: u64) -> model::RunMetad
             entropy_sources: vec![
                 "rng:StdRng(seed)".to_string(),
                 "tooling:stubbed-or-replay".to_string(),
+                "chaos:fault-schedule".to_string(),
             ],
             total_rng_calls,
+            chaos_profile: Some(model::ChaosProfileSummary {
+                enabled: chaos_profile.enabled,
+                profile: chaos_profile.profile.clone(),
+                schedule_version: chaos_profile.schedule_version,
+                rates: chaos_profile.rates.clone(),
+            }),
         },
         provenance: model::ProvenanceMetadata {
             created_at,
@@ -547,6 +839,136 @@ fn resolve_created_at(args: &RunArgs) -> String {
     chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0)
         .map(|dt| dt.to_rfc3339())
         .unwrap_or_default()
+}
+
+fn resolve_chaos_profile(args: &RunArgs, seed: u64) -> chaos::ChaosProfile {
+    let enabled = matches!(args.faults, FaultToggle::On);
+    let profile_name = match args.fault_profile {
+        FaultProfile::None => "none",
+        FaultProfile::Ci => "ci",
+        FaultProfile::Stress => "stress",
+    };
+
+    let profile = chaos::profile_from_name(profile_name, seed, enabled);
+    let timeout_rate = args.fault_timeout_rate.map(chaos::rate_to_per_million);
+    let corrupt_rate = args.fault_corrupt_rate.map(chaos::rate_to_per_million);
+    let drop_rate = args.fault_drop_rate.map(chaos::rate_to_per_million);
+    let latency_rate = args.fault_latency_rate.map(chaos::rate_to_per_million);
+
+    chaos::with_overrides(
+        profile,
+        timeout_rate,
+        corrupt_rate,
+        drop_rate,
+        latency_rate,
+    )
+}
+
+fn demo_chaos_profile(seed: u64, profile: FaultProfile, enabled: bool) -> chaos::ChaosProfile {
+    let profile_name = match profile {
+        FaultProfile::None => "none",
+        FaultProfile::Ci => "ci",
+        FaultProfile::Stress => "stress",
+    };
+    chaos::profile_from_name(profile_name, seed, enabled)
+}
+
+struct DemoRun {
+    metadata: model::RunMetadata,
+    chaos_profile: chaos::ChaosProfile,
+    agent_trace: Vec<agent::AgentTraceEntry>,
+    transcript: tooling::ToolTranscriptRecord,
+}
+
+fn run_demo_agent(
+    seed: u64,
+    run_id: u32,
+    chaos_profile: chaos::ChaosProfile,
+    regress: bool,
+) -> Result<DemoRun> {
+    let case_id = derive_case_id(seed, run_id);
+    let metadata = build_agent_metadata(
+        &RunArgs {
+            seed,
+            runs: 1,
+            case: Some(run_id),
+            out_dir: PathBuf::new(),
+            clean: false,
+            no_tui: true,
+            parallel: false,
+            created_at: None,
+            agent: Some("clawdbot".to_string()),
+            replay: None,
+            faults: FaultToggle::Off,
+            fault_profile: FaultProfile::None,
+            fault_timeout_rate: None,
+            fault_corrupt_rate: None,
+            fault_drop_rate: None,
+            fault_latency_rate: None,
+        },
+        0,
+        chaos_profile.clone(),
+    );
+
+    let chaos_engine = if chaos_profile.enabled {
+        Some(chaos::ChaosEngine::new(chaos_profile.clone(), run_id))
+    } else {
+        None
+    };
+    let mut tool_transcript = tooling::ToolTranscript::new_live(chaos_engine);
+    let mut agent = agent::ClawdbotAgent::new(seed);
+    let mut agent_trace = Vec::new();
+    let mut prior_outputs = Vec::new();
+
+    const MAX_STEPS: u32 = 4;
+    for step in 0..MAX_STEPS {
+        let input = agent::AgentInput {
+            run_id,
+            case_id: case_id.clone(),
+            step,
+            seed,
+            prior_tool_outputs: prior_outputs.clone(),
+        };
+        let output = agent.step(input);
+        agent_trace.push(agent::trace_entry_from_output(step, &output));
+
+        for request in output.tool_requests {
+            let response = tool_transcript.execute(step, request);
+            prior_outputs.push(response);
+        }
+
+        if output.is_final {
+            break;
+        }
+    }
+
+    let mut transcript = tool_transcript.into_record();
+    if regress {
+        apply_demo_regression(&mut transcript);
+    }
+
+    Ok(DemoRun {
+        metadata,
+        chaos_profile,
+        agent_trace,
+        transcript,
+    })
+}
+
+fn apply_demo_regression(transcript: &mut tooling::ToolTranscriptRecord) {
+    if let Some(call) = transcript.entries.first_mut() {
+        let output = match call.response.output.clone() {
+            serde_json::Value::Object(mut map) => {
+                map.insert("regressed".to_string(), serde_json::Value::Bool(true));
+                serde_json::Value::Object(map)
+            }
+            other => serde_json::json!({
+                "regressed": true,
+                "prior": other,
+            }),
+        };
+        call.response.output = output;
+    }
 }
 
 fn parallel_strategy(parallel: bool) -> String {

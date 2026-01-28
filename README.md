@@ -24,6 +24,29 @@ This implementation expands on the original paper with additional operational fe
 - **Witness roots** (BLAKE3) that commit to every event in a run’s trace.
 - **Reproducible run metadata** capturing seed, run counts, parallel strategy, and provenance.
 - **Artifact manifests** for programmatic consumption of outputs.
+- **Deterministic Simulation Testing (DST)-style fault injection** for reproducible chaos
+  testing, with fault schedules committed to the witness metadata.
+- **Canonical JSON artifacts** for byte-stable audit trails.
+
+## Deterministic Simulation Testing (DST)-style fault injection
+
+Cogitator can deterministically inject tool faults (timeouts, corruptions, drops, and
+latency simulations). Faults are driven by a seeded schedule and recorded in tool
+transcripts so that record + replay is byte-stable. Simulated latency is exposed to the
+agent but excluded from witness commitments by default.
+
+Example:
+
+```bash
+./target/debug/cogitator run \\
+  --agent clawdbot \\
+  --case 0 \\
+  --faults on \\
+  --fault-profile stress \\
+  --fault-timeout-rate 0.01 \\
+  --fault-corrupt-rate 0.001 \\
+  --fault-drop-rate 0.001
+```
 
 ## CLI overview
 
@@ -62,9 +85,11 @@ out/
 ├── witness_root.txt
 └── run_0000/
     ├── agent_trace.json
+    ├── chaos_profile.json
     ├── drift_report.json
     ├── hash_chain.txt
     ├── tool_transcript.json
+    ├── witness_root.txt
     └── witness_manifest.json
 ```
 
@@ -81,6 +106,8 @@ Agent-mode produces a per-run directory (`out/run_0000/`) with:
 - `hash_chain.txt` – chained hashes over agent traces + tool calls
 - `drift_report.json` – drift status and mismatches
 - `witness_manifest.json` – pointers to all per-run artifacts
+- `chaos_profile.json` – fault schedule declaration and rates
+- `witness_root.txt` – witness root for the agent run
 
 The witness root commits to the run globally; the per-run hash chain provides local,
 step-by-step provenance for drift analysis.
@@ -106,6 +133,18 @@ Verify a witness bundle (agent mode):
 ```bash
 ./target/debug/cogitator verify --witness out/run_0000
 ```
+
+Verification emits `verify_report.json` alongside the bundle with artifact hashes,
+bundle hash recomputation, and (when possible) witness root verification.
+
+### Drift demo (baseline vs regressed + faults)
+
+```bash
+./target/debug/cogitator demo drift --fault-profile stress --threads 4
+```
+
+This produces baseline/regressed pairs with and without deterministic fault injection,
+showing how drift can be detected under DST-style chaos.
 
 ## TUI support
 

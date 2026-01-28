@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cogitator Chaos Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "schedule_version", "enabled", "profile", "seed", "rates"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "schedule_version": { "type": "integer", "minimum": 1 },
+    "enabled": { "type": "boolean" },
+    "profile": { "type": "string" },
+    "seed": { "type": "integer", "minimum": 0 },
+    "rates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_per_million",
+        "corrupt_per_million",
+        "drop_per_million",
+        "latency_sim_per_million"
+      ],
+      "properties": {
+        "timeout_per_million": { "type": "integer", "minimum": 0 },
+        "corrupt_per_million": { "type": "integer", "minimum": 0 },
+        "drop_per_million": { "type": "integer", "minimum": 0 },
+        "latency_sim_per_million": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

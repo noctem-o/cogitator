@@ -12,11 +12,45 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["step", "request", "response"],
+        "required": ["step", "tool_call_idx", "request", "response"],
         "properties": {
           "step": { "type": "integer", "minimum": 0 },
+          "tool_call_idx": { "type": "integer", "minimum": 0 },
           "request": { "type": "object" },
-          "response": { "type": "object" }
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tool_name", "output", "success"],
+            "properties": {
+              "tool_name": { "type": "string" },
+              "output": {},
+              "success": { "type": "boolean" },
+              "simulated_latency_ms": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          },
+          "fault": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["kind", "step", "tool_call_idx", "domain", "params"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["timeout", "corrupt", "drop", "latency_sim"]
+              },
+              "step": { "type": "integer", "minimum": 0 },
+              "tool_call_idx": { "type": "integer", "minimum": 0 },
+              "domain": { "type": "string" },
+              "params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mask", "latency_ms"],
+                "properties": {
+                  "mask": { "type": ["integer", "null"] },
+                  "latency_ms": { "type": ["integer", "null"], "minimum": 0 }
+                }
+              }
+            }
+          }
         }
       }
     }

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cogitator Verify Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verified",
+    "issues",
+    "artifact_results",
+    "bundle_hash_expected",
+    "bundle_hash_actual",
+    "witness_root_expected",
+    "witness_root_actual"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "verified": { "type": "boolean" },
+    "issues": { "type": "array", "items": { "type": "string" } },
+    "artifact_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "expected_hash", "actual_hash", "ok"],
+        "properties": {
+          "path": { "type": "string" },
+          "expected_hash": { "type": "string" },
+          "actual_hash": { "type": ["string", "null"] },
+          "ok": { "type": "boolean" }
+        }
+      }
+    },
+    "bundle_hash_expected": { "type": "string" },
+    "bundle_hash_actual": { "type": "string" },
+    "witness_root_expected": { "type": ["string", "null"] },
+    "witness_root_actual": { "type": ["string", "null"] }
+  }
+}

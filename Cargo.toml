@@ -22,3 +22,6 @@ sha2 = "0.10"
 
 ratatui = { version = "0.28", optional = true }
 crossterm = { version = "0.28", optional = true, features = ["event-stream"] }
+
+[dev-dependencies]
+proptest = "1.4"

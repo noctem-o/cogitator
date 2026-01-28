@@ -1,0 +1,16 @@
+\section{Deterministic Simulation Testing (DST)-style fault injection}
+\label{sec:dst}
+
+We extend Cogitator with deterministic fault injection (DST-style chaos) as a controlled
+experimental variable. The fault schedule is seeded and keyed by run identifiers,
+step indices, tool call indices, and domain keys, yielding a reproducible fault decision
+and parameters (e.g., corruption masks). This schedule is written to a
+\texttt{chaos\_profile.json} artifact and its summary is committed into the witness
+metadata, ensuring the witness root is invariant for identical inputs, seed, transcript,
+and fault schedule.
+
+Faults are injected at the tool boundary (timeouts, payload corruption, drops, and
+simulated latency). Simulated latency is exposed to the agent but excluded from witness
+commitments unless explicitly configured, maintaining auditability without binding to
+wall-clock timing. Canonical JSON serialization is used across artifacts to ensure
+byte-stable outputs for the same declared inputs.

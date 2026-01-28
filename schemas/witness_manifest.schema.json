@@ -12,7 +12,9 @@
     "agent_trace_json",
     "tool_transcript_json",
     "drift_report_json",
-    "hash_chain_txt"
+    "hash_chain_txt",
+    "artifact_hashes",
+    "bundle_hash"
   ],
   "properties": {
     "schema_version": { "type": "integer", "minimum": 1 },
@@ -24,6 +26,13 @@
     "tool_transcript_json": { "type": "string" },
     "drift_report_json": { "type": "string" },
     "hash_chain_txt": { "type": "string" },
+    "chaos_profile_json": { "type": ["string", "null"] },
+    "witness_root_txt": { "type": ["string", "null"] },
+    "artifact_hashes": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "bundle_hash": { "type": "string" },
     "replay_source": { "type": ["string", "null"] }
   }
 }
