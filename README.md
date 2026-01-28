@@ -181,6 +181,38 @@ and artifact release.
 
 ---
 
+## Paper alignment (implementation status)
+
+This repository is a **minimal reference implementation** meant to exercise the
+core mechanisms described in the paper while keeping the codebase small and
+auditable. The following items map the paper claims to the current code:
+
+- **Deterministic seed schedule (SHA-256)**: Implemented via `hash_seed` using
+  `SHA-256(seed || run_id)` with a per-run PRNG seed derived from the first
+  eight bytes. (See `eval.rs`.)  
+- **Witness chains (BLAKE3)**: Implemented exactly as specified:
+  `BLAKE3("COGITATOR" || witnessed_metadata)` then
+  `BLAKE3(prev || encode(event))`, producing `witness_root`. (See `witness.rs`
+  and `main.rs`.)  
+- **Canonical event encoding**: Events/metadata are serialized with compact,
+  deterministic JSON via `serde_json` on fixed-structure structs. This ensures
+  stable field ordering for the current schema, but does **not** yet implement
+  a standalone canonicalization spec (e.g., explicit type tags or normalized
+  float rendering beyond serde defaults). (See `trace.rs`.)  
+- **Entropy accounting**: Each event records `entropy_bits` and `rng_calls`,
+  and metadata records `total_rng_calls` and `entropy_sources`. A hard entropy
+  budget is **not** enforced yet. (See `eval.rs` and `model.rs`.)  
+- **Parallel determinism**: Parallel execution is supported with deterministic
+  ordering by `(run_id, step)` in the canonical trace. (See `eval.rs`.)  
+- **NixOS reproducibility**: The README/paper discuss NixOS-derived
+  reproducibility. The current codebase only records optional Nix-related
+  metadata (e.g., `NIX_STORE`) and does **not** ship a flake or pinned toolchain.
+  This is planned work. (See `main.rs`.)
+
+If you need the repository to fully match the paper’s planned artifact bundle
+(flake, standalone verifier packaging, canonical encoding spec, regression
+suite), please open an issue or request those components explicitly.
+
 ## References
 
 - Guo et al.  
