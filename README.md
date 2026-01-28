@@ -209,9 +209,6 @@ auditable. The following items map the paper claims to the current code:
   metadata (e.g., `NIX_STORE`) and does **not** ship a flake or pinned toolchain.
   This is planned work. (See `main.rs`.)
 
-If you need the repository to fully match the paper’s planned artifact bundle
-(flake, standalone verifier packaging, canonical encoding spec, regression
-suite), please open an issue or request those components explicitly.
 
 ## References
 
