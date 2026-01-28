@@ -40,6 +40,7 @@ impl LlmRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum LlmBackendKind {
     Stub,
 }
@@ -91,6 +92,7 @@ pub fn parse_tool_request(request: &ToolRequest) -> Result<LlmRequest> {
     Ok(parsed)
 }
 
+#[allow(dead_code)]
 pub fn parse_tool_response(response: &ToolResponse) -> Result<LlmResponse> {
     if response.tool_name != LlmRequest::tool_name() {
         bail!("unexpected llm tool name: {}", response.tool_name);

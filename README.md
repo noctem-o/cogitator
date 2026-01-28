@@ -57,8 +57,12 @@ validate the exact same witness root, even across different machines.
 ## Quickstart
 
 ```bash
-cargo build
-./target/debug/cogitator run --seed 42 --runs 10 --out-dir out
+cargo build --release
+./target/release/cogitator run --seed 42 --runs 10 --out-dir out --clean
+./target/release/cogitator verify \
+  --meta out/meta.json \
+  --trace out/trace.jsonl \
+  --expect "$(cat out/witness_root.txt)"
 ```
 
 ## Install prerequisites
@@ -119,8 +123,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ## Build and run
 
 ```bash
-cargo build
-./target/debug/cogitator --help
+cargo build --release
+./target/release/cogitator --help
 ```
 
 ## CLI overview
@@ -128,13 +132,13 @@ cargo build
 ### Run deterministic evaluations
 
 ```bash
-./target/debug/cogitator run --seed 42 --runs 100 --out-dir out
+./target/release/cogitator run --seed 42 --runs 100 --out-dir out
 ```
 
 ### Run agent mode (with tool transcripts)
 
 ```bash
-./target/debug/cogitator run --agent clawdbot --runs 1 --out-dir out
+./target/release/cogitator run --agent clawdbot --runs 1 --out-dir out
 ```
 
 Agent-only flags such as `--threads` and `--fault-*` are rejected in non-agent runs.
@@ -189,6 +193,9 @@ Cogitator draws a strict line between what is **witnessed** and what is **proven
 - **Bundle hash** covers all artifacts listed in the witness manifest (including optional
   provenance artifacts like `nix_provenance.json`) for offline verification.
 
+Witness roots are stable across hardware and thread counts; environment details belong to
+provenance, not the witness commitment.
+
 ---
 
 ## Deterministic Simulation Testing (DST)
@@ -204,7 +211,7 @@ the sum of configured rates, capped at 1,000,000 per million.
 Example:
 
 ```bash
-./target/debug/cogitator run \
+./target/release/cogitator run \
   --agent clawdbot \
   --case 0 \
   --faults on \
@@ -213,6 +220,60 @@ Example:
   --fault-corrupt-rate 0.001 \
   --fault-drop-rate 0.001
 ```
+
+---
+
+## Verification workflow (no Makefile)
+
+Use the release binary to reproduce runs and verify witnesses:
+
+### Non-agent runs
+
+```bash
+./target/release/cogitator run --seed 1 --runs 10 --out-dir out --clean
+./target/release/cogitator verify \
+  --meta out/meta.json \
+  --trace out/trace.jsonl \
+  --expect "$(cat out/witness_root.txt)"
+```
+
+### Agent record → replay
+
+```bash
+./target/release/cogitator run --agent clawdbot --runs 1 --out-dir out --clean
+./target/release/cogitator run \
+  --agent clawdbot \
+  --case 0 \
+  --replay out/run_0000 \
+  --out-dir replay \
+  --clean
+./target/release/cogitator verify --witness out/run_0000
+```
+
+### Demo drift (baseline verify)
+
+```bash
+./target/release/cogitator demo drift \
+  --seed 1 \
+  --threads 2 \
+  --fault-profile ci \
+  --out-dir demo_out \
+  --clean
+./target/release/cogitator verify --witness demo_out/drift/baseline_faults
+```
+
+---
+
+## Nix (optional)
+
+If you use Nix, a dev shell is provided but not required for normal builds:
+
+```bash
+nix develop
+```
+
+Cogitator remains fully functional without Nix; any Nix provenance data is recorded only
+in provenance artifacts and never alters witness roots.
 
 ---
 

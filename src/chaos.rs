@@ -83,6 +83,7 @@ impl ChaosEngine {
         Self { profile, run_id }
     }
 
+    #[allow(dead_code)]
     pub fn profile(&self) -> &ChaosProfile {
         &self.profile
     }
@@ -333,7 +334,7 @@ fn corrupt_value(value: serde_json::Value, mask: u64) -> serde_json::Value {
             if let Some(n) = num.as_i64() {
                 serde_json::Value::Number((n ^ (mask as i64 & 0xFF)).into())
             } else if let Some(n) = num.as_u64() {
-                serde_json::Value::Number((n ^ (mask as u64 & 0xFF)).into())
+                serde_json::Value::Number((n ^ (mask & 0xFF)).into())
             } else {
                 serde_json::Value::Number(num)
             }

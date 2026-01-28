@@ -94,6 +94,10 @@ pub struct DemoDriftArgs {
 
 /// Run a deterministic evaluation and emit artifacts.
 #[derive(Args, Debug)]
+#[command(
+    about = "Run a deterministic evaluation and emit artifacts.",
+    long_about = "Run a deterministic evaluation and emit artifacts.\n\nWitness roots exclude runtime environment details and simulated latency. Thread counts are recorded in provenance only."
+)]
 pub struct RunArgs {
     #[arg(long, default_value_t = 42)]
     pub seed: u64,
@@ -610,7 +614,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
                 model: args.llm_model.clone(),
                 seed: args.llm_seed,
             };
-            let mut agent = agent::ClawdbotAgent::new(args.seed, llm_config);
+            let mut agent = agent::ClawdbotAgent::new(llm_config);
             let mut agent_trace = Vec::new();
             let mut prior_outputs = Vec::new();
 
@@ -1046,7 +1050,7 @@ fn run_demo_agent(
         None
     };
     let mut tool_transcript = tooling::ToolTranscript::new_live(chaos_engine);
-    let mut agent = agent::ClawdbotAgent::new(seed, agent::LlmConfig::default());
+    let mut agent = agent::ClawdbotAgent::new(agent::LlmConfig::default());
     let mut agent_trace = Vec::new();
     let mut prior_outputs = Vec::new();
 

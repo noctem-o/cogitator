@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Test
+        run: cargo test
+
+      - name: Demo drift (minimal)
+        run: cargo run -- demo drift --seed 1 --threads 1 --fault-profile ci --out-dir demo_out --clean
+
+      - name: Verify demo bundle
+        run: cargo run -- verify --witness demo_out/drift/baseline_faults

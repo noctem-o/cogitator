@@ -20,6 +20,7 @@ struct CaseRun {
 }
 
 /// Sequential evaluation (deterministic)
+#[allow(dead_code)]
 pub fn run_sequential(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
     run_ids
         .iter()
@@ -28,6 +29,7 @@ pub fn run_sequential(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
 }
 
 /// Parallel evaluation (deterministic ordering by run_id)
+#[allow(dead_code)]
 pub fn run_parallel(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
     run_with_trace(seed, run_ids, true).results
 }
