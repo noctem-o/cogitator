@@ -6,16 +6,25 @@ reproducible the way git makes code reproducible. It captures full causal traces
 entropy usage where applicable, and packages run artifacts so that third parties can
 recompute the same witness root from the same inputs and environment.
 
-## What’s new in this repo
+## Recent changes and upgrades
 
-This implementation expands on the original paper with additional operational features:
+This implementation expands on the original paper with additional operational features
+and auditability improvements:
 
-- **Agent-mode execution** with deterministic tool transcripts and replay support.
-- **Drift detection** that compares replayed tool calls against recorded transcripts.
-- **Witness bundles** that package agent traces, tool transcripts, and hash chains for
-  independent verification.
-- **Hash-chain auditing** for agent traces + tool calls, separate from the main witness root.
-- **Optional TUI** for inspecting run summaries and agent traces (feature-flagged).
+- **Deterministic agent mode** with tool transcript recording + replay for byte-stable
+  re-execution.
+- **Drift detection** that compares replayed tool calls against recorded transcripts and
+  emits machine-readable drift reports.
+- **Witness bundles** that package agent traces, tool transcripts, hash chains, and
+  manifests for offline verification workflows.
+- **Hash-chain auditing** for agent traces + tool calls, separate from the global witness
+  root.
+- **Deterministic Simulation Testing (DST)-style fault injection** that records chaos
+  schedules and preserves replay determinism.
+- **Witness/provenance split** so runtime environment details stay out of witness
+  commitments while remaining discoverable.
+- **Canonical JSON artifacts** to keep audit artifacts byte-stable across runs.
+- **Optional TUI** for inspecting run summaries and drift status (feature-flagged).
 
 ## Key capabilities
 
