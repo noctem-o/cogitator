@@ -450,7 +450,6 @@ fn agent_witness_root_invariant_across_thread_counts() {
                     };
 
                     let mut agent = cogitator::agent::ClawdbotAgent::new(
-                        13,
                         cogitator::agent::LlmConfig::default(),
                     );
                     let mut agent_trace = Vec::new();

@@ -9,6 +9,7 @@ use crate::model::{RunMetadata, TraceEvent, WitnessedMetadata};
 use crate::tooling::{ToolCall, ToolRequest};
 use crate::witness;
 
+#[allow(dead_code)]
 pub fn encode_metadata(metadata: &RunMetadata) -> Result<Vec<u8>> {
     to_canonical_json(metadata)
 }
@@ -101,7 +102,7 @@ pub fn compute_agent_witness_root(
     Ok(witness.finalize_hex())
 }
 
-pub fn index_tool_calls_by_step<'a>(tool_calls: &'a [ToolCall]) -> HashMap<u32, Vec<&'a ToolCall>> {
+pub fn index_tool_calls_by_step(tool_calls: &[ToolCall]) -> HashMap<u32, Vec<&ToolCall>> {
     let mut map: HashMap<u32, Vec<&ToolCall>> = HashMap::new();
     for call in tool_calls {
         map.entry(call.step).or_default().push(call);

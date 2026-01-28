@@ -55,13 +55,12 @@ pub trait Agent {
 
 #[derive(Debug, Clone)]
 pub struct ClawdbotAgent {
-    seed: u64,
     llm: LlmConfig,
 }
 
 impl ClawdbotAgent {
-    pub fn new(seed: u64, llm: LlmConfig) -> Self {
-        Self { seed, llm }
+    pub fn new(llm: LlmConfig) -> Self {
+        Self { llm }
     }
 }
 
@@ -69,6 +68,7 @@ impl Agent for ClawdbotAgent {
     fn step(&mut self, input: AgentInput) -> AgentOutput {
         let step = input.step;
         let case_hint = format!("run={} case={}", input.run_id, input.case_id);
+        let _ = input.prior_tool_outputs.len();
         if step == 0 {
             let tool_request = ToolRequest {
                 tool_name: "clawdbot.lookup".to_string(),

@@ -25,9 +25,11 @@ Cogitator separates witnessed commitments from provenance. The witness root comm
 canonical trace events plus the agent trace and tool-call witness view (agent step, then
 tool calls ordered by \texttt{tool\_call\_idx}). Runtime context such as wall-clock time,
 thread counts, and environment fingerprints are captured only in provenance and never
-enter witnessed commitments. The witness bundle hash additionally commits to all emitted
-artifacts (including optional provenance artifacts like \texttt{nix\_provenance.json})
-for offline verification.
+enter witnessed commitments, keeping witness roots stable across hardware and thread
+counts. Optional Nix provenance capture records reproducible environment metadata without
+becoming a required dependency. The witness bundle hash additionally commits to all
+emitted artifacts (including optional provenance artifacts like
+\texttt{nix\_provenance.json}) for offline verification.
 
 LLM inference is modeled as a tool call: in live mode, responses are recorded into the
 tool transcript, and in replay mode those responses are replayed verbatim to preserve

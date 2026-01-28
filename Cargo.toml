@@ -25,3 +25,4 @@ crossterm = { version = "0.28", optional = true, features = ["event-stream"] }
 
 [dev-dependencies]
 proptest = "1.4"
+tempfile = "3.12"

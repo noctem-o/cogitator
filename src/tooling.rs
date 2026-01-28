@@ -89,6 +89,7 @@ impl ToolTranscript {
         }
     }
 
+    #[allow(dead_code)]
     pub fn mode(&self) -> ToolMode {
         self.mode.clone()
     }
@@ -177,6 +178,7 @@ impl ToolTranscript {
         }
     }
 
+    #[allow(dead_code)]
     pub fn expected_record(&self) -> Option<ToolTranscriptRecord> {
         if self.expected.is_empty() {
             None
