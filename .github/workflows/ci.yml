@@ -23,13 +23,13 @@ jobs:
         run: cargo fmt --check
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Demo drift (minimal)
-        run: cargo run -- demo drift --seed 1 --threads 1 --fault-profile ci --out-dir demo_out --clean
+        run: cargo run --locked -- demo drift --seed 1 --threads 1 --fault-profile ci --out-dir demo_out --clean
 
       - name: Verify demo bundle
-        run: cargo run -- verify --witness demo_out/drift/baseline_faults
+        run: cargo run --locked -- verify --witness demo_out/drift/baseline_faults
 
   gauntlet-witness:
     runs-on: ubuntu-latest
