@@ -20,12 +20,17 @@ pub fn collect_nix_provenance(
     repo_root: &Path,
 ) -> Result<Option<NixProvenance>> {
     let nix_version = nix_version();
+    let mut nix_provenance_resolved = None;
     match mode {
         NixProvenanceMode::Off => return Ok(None),
         NixProvenanceMode::Auto => {
             let nix_store = std::env::var("NIX_STORE").ok();
             if nix_store.is_none() && nix_version.is_none() {
-                return Ok(None);
+                if cfg!(target_os = "windows") {
+                    nix_provenance_resolved = Some("off (windows)".to_string());
+                } else {
+                    return Ok(None);
+                }
             }
         }
         NixProvenanceMode::On => {
@@ -35,11 +40,26 @@ pub fn collect_nix_provenance(
         }
     }
 
+    if nix_provenance_resolved.is_some()
+        && nix_version.is_none()
+        && std::env::var("NIX_STORE").ok().is_none()
+    {
+        let provenance = NixProvenance {
+            nix_provenance_resolved,
+            nix_version: None,
+            nixos_version: None,
+            flake_metadata: None,
+            current_system: None,
+        };
+        return Ok(Some(provenance));
+    }
+
     let nixos_version = command_output("nixos-version", &[]);
     let flake_metadata = flake_metadata(repo_root);
     let current_system = current_system_info();
 
     let provenance = NixProvenance {
+        nix_provenance_resolved,
         nix_version,
         nixos_version,
         flake_metadata,
@@ -50,6 +70,7 @@ pub fn collect_nix_provenance(
         && provenance.nixos_version.is_none()
         && provenance.flake_metadata.is_none()
         && provenance.current_system.is_none()
+        && provenance.nix_provenance_resolved.is_none()
     {
         Ok(None)
     } else {

@@ -101,6 +101,7 @@ pub struct ProvenanceMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NixProvenance {
+    pub nix_provenance_resolved: Option<String>,
     pub nix_version: Option<String>,
     pub nixos_version: Option<String>,
     pub flake_metadata: Option<serde_json::Value>,
