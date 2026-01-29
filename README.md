@@ -29,6 +29,7 @@ environment.
 - [Commitment boundaries](#commitment-boundaries)
 - [Deterministic Simulation Testing (DST)](#deterministic-simulation-testing-dst)
 - [Verification workflow](#verification-workflow-no-makefile)
+- [Gauntlet witness gate in CI](#gauntlet-witness-gate-in-ci)
 - [Nix (optional)](#nix-optional)
 - [Project layout](#project-layout)
 
@@ -106,6 +107,20 @@ sudo pacman -S --needed base-devel curl git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+### Linux (NixOS)
+
+If you have flakes enabled, you can enter the dev shell with Rust tooling preinstalled:
+
+```bash
+nix develop
+```
+
+Without flakes, install the Rust toolchain with a transient shell:
+
+```bash
+nix-shell -p rustc cargo rustfmt
+```
+
 ### macOS
 
 ```bash
@@ -160,6 +175,8 @@ cargo build --release
 
 Agent-only flags such as `--threads` and `--fault-*` are rejected in non-agent runs.
 In agent mode, `--threads` affects throughput only and is recorded as provenance (not witnessed).
+Agent mode defaults to stubbed LLM tool calls; enable live tool calls with
+`--llm on --llm-model <model>` (and optionally `--llm-seed`).
 
 ---
 
@@ -282,6 +299,21 @@ Use the release binary to reproduce runs and verify witnesses:
 ```
 If the scenario name changes, verify any directory under `demo_out/drift/*/` that contains
 `witness_manifest.json`.
+
+---
+
+## Gauntlet witness gate in CI
+
+Cogitator includes a minimal "gauntlet" agent case designed as a single pinned CI gate.
+It keeps CI costs low while still asserting a stable end-to-end witness root. To run the
+same check locally, use:
+
+```bash
+scripts/check_gauntlet_root.sh
+```
+
+The script compares the generated witness root with the golden value in
+`goldens/gauntlet_witness_root.txt` and prints drift diagnostics on mismatch.
 
 ---
 
