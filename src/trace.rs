@@ -1,10 +1,13 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use crate::agent::AgentTraceEntry;
 use crate::canonical_json;
 use crate::chaos::FaultRecord;
+use crate::io_utils;
 use crate::model::{RunMetadata, TraceEvent, WitnessedMetadata};
 use crate::tooling::{ToolCall, ToolRequest};
 use crate::witness;
@@ -29,6 +32,34 @@ pub fn encode_agent_trace_entry(entry: &AgentTraceEntry) -> Result<Vec<u8>> {
 pub fn encode_tool_call(call: &ToolCall) -> Result<Vec<u8>> {
     let witness_call = ToolCallWitness::from(call);
     to_canonical_json(&witness_call)
+}
+
+pub fn write_trace_and_compute_witness_root(
+    path: &Path,
+    metadata: &WitnessedMetadata,
+    events: &[TraceEvent],
+) -> Result<String> {
+    let ordered = ordered_trace_events(events);
+    let metadata_bytes = encode_witnessed_metadata(metadata)?;
+    let mut witness_root = None;
+
+    io_utils::write_atomic(path, "trace.jsonl", |file| {
+        let mut writer = BufWriter::with_capacity(256 * 1024, file);
+        let mut witness = witness::Witness::new(&metadata_bytes)?;
+
+        for event in &ordered {
+            let event_bytes = encode_event(event)?;
+            writer.write_all(&event_bytes)?;
+            writer.write_all(b"\n")?;
+            witness.update(&event_bytes)?;
+        }
+
+        writer.flush()?;
+        witness_root = Some(witness.finalize_hex());
+        Ok(())
+    })?;
+
+    witness_root.context("failed to compute witness root for trace.jsonl")
 }
 
 pub fn tool_call_witness_value_canonical(call: &ToolCall) -> Result<serde_json::Value> {
@@ -108,6 +139,12 @@ pub fn index_tool_calls_by_step(tool_calls: &[ToolCall]) -> HashMap<u32, Vec<&To
         map.entry(call.step).or_default().push(call);
     }
     map
+}
+
+fn ordered_trace_events(events: &[TraceEvent]) -> Vec<&TraceEvent> {
+    let mut ordered: Vec<&TraceEvent> = events.iter().collect();
+    ordered.sort_by_key(|event| (event.run_id, event.step));
+    ordered
 }
 
 fn debug_assert_no_floats(_value: &serde_json::Value) {

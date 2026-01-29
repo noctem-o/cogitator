@@ -61,8 +61,6 @@ pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
         trace.extend(case_run.events);
     }
 
-    trace.sort_by_key(|event| (event.run_id, event.step));
-
     RunOutput {
         results,
         trace,

@@ -5,7 +5,6 @@ use sha2::{Digest, Sha256};
 
 use crate::agent::Agent;
 use std::fs::{self, File};
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -300,9 +299,11 @@ fn run(args: RunArgs) -> Result<()> {
     };
 
     let trace_path = args.out_dir.join("trace.jsonl");
-    write_trace(&trace_path, &output.trace)?;
-
-    let witness_root = compute_witness_root(&metadata.witnessed, &output.trace)?;
+    let witness_root = trace::write_trace_and_compute_witness_root(
+        &trace_path,
+        &metadata.witnessed,
+        &output.trace,
+    )?;
     let witness_path = args.out_dir.join("witness_root.txt");
     io_utils::write_atomic_string(
         &witness_path,
@@ -883,43 +884,6 @@ fn verify_cmd(args: VerifyArgs) -> Result<()> {
     let computed = verify::verify(&args.meta, &args.trace, &expect)?;
     println!("Verified witness_root={}", computed);
     Ok(())
-}
-
-fn write_trace(path: &Path, events: &[model::TraceEvent]) -> Result<()> {
-    let ordered = ordered_trace_events(events);
-    io_utils::write_atomic(path, "trace.jsonl", |file| {
-        let mut writer = BufWriter::new(file);
-        for event in ordered {
-            let bytes = trace::encode_event(event)?;
-            writer.write_all(&bytes)?;
-            writer.write_all(b"\n")?;
-        }
-        writer.flush()?;
-        Ok(())
-    })
-}
-
-fn compute_witness_root(
-    metadata: &model::WitnessedMetadata,
-    events: &[model::TraceEvent],
-) -> Result<String> {
-    let metadata_bytes = trace::encode_witnessed_metadata(metadata)?;
-    let mut witness = witness::Witness::new(&metadata_bytes)?;
-
-    let ordered = ordered_trace_events(events);
-    for event in ordered {
-        let event_bytes = trace::encode_event(event)?;
-        witness.update(&event_bytes)?;
-    }
-
-    Ok(witness.finalize_hex())
-}
-
-fn ordered_trace_events(events: &[model::TraceEvent]) -> Vec<&model::TraceEvent> {
-    let mut ordered: Vec<&model::TraceEvent> = events.iter().collect();
-    // Stable ordering by run_id + step ensures deterministic hashing across parallel runs.
-    ordered.sort_by_key(|event| (event.run_id, event.step));
-    ordered
 }
 
 fn compute_agent_witness_root(
