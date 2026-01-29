@@ -129,7 +129,12 @@ pub struct RunArgs {
     #[arg(long)]
     pub no_tui: bool,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(
+        long,
+        default_value_t = true,
+        action = clap::ArgAction::Set,
+        value_parser = clap::value_parser!(bool)
+    )]
     pub parallel: bool,
 
     #[arg(long)]

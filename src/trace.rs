@@ -110,10 +110,10 @@ pub fn index_tool_calls_by_step(tool_calls: &[ToolCall]) -> HashMap<u32, Vec<&To
     map
 }
 
-fn debug_assert_no_floats(value: &serde_json::Value) {
+fn debug_assert_no_floats(_value: &serde_json::Value) {
     #[cfg(debug_assertions)]
     {
-        if contains_float(value) {
+        if contains_float(_value) {
             panic!("witnessed artifact contains floating-point number");
         }
     }
