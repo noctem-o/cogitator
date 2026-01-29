@@ -1,0 +1,17 @@
+\begin{tikzpicture}[font=\small, node distance=1.6cm, >=latex]
+  \tikzstyle{block}=[draw, rounded corners, align=center, minimum height=1cm, minimum width=2.8cm]
+
+  \node[block] (inputs) {Inputs\\(seed, flags, tasks)};
+  \node[block, right=of inputs] (run) {Deterministic\\run};
+  \node[block, right=of run] (trace) {Trace / transcript};
+  \node[block, below=of trace] (artifacts) {Artifacts\\(bundle)};
+  \node[block, right=of trace] (roots) {Roots\\\ExecutionRoot\\\BundleRoot};
+  \node[block, right=of roots] (verify) {Verify\\(CI + drift)};
+
+  \draw[->] (inputs) -- (run);
+  \draw[->] (run) -- (trace);
+  \draw[->] (trace) -- (roots);
+  \draw[->] (trace) -- (artifacts);
+  \draw[->] (artifacts) -- (roots);
+  \draw[->] (roots) -- (verify);
+\end{tikzpicture}

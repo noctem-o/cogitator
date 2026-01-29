@@ -1,0 +1,205 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\newcommand{\ExecutionRoot}{\textsc{ExecutionRoot}}
+\newcommand{\BundleRoot}{\textsc{BundleRoot}}
+
+\title{Cogitator: Deterministic Evaluation Harness with Dual Cryptographic Roots}
+\author{Cogitator Authors}
+\date{Version v1.0}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Cogitator is a deterministic evaluation harness that emits a self-contained run bundle
+and two distinct cryptographic commitments. \ExecutionRoot commits to witnessed metadata
+and a deterministically ordered semantic event stream, enabling semantic drift detection.
+\BundleRoot commits to the entire artifact bundle for integrity checking and CI gating.
+This paper defines the two roots precisely, separates witnessed metadata from provenance
+metadata, and specifies verification procedures for both non-agent and agent modes.
+\end{abstract}
+
+\section{Introduction}
+Cogitator targets repeatable, inspectable evaluations. Its design goal is simple:
+for a fixed binary and fixed inputs, produce byte-stable artifacts and deterministic
+cryptographic roots. The system treats external tool calls (including LLM inference)
+as record/replay boundaries and relies on canonical JSON serialization to keep
+witnessed outputs stable across runs.
+
+\section{Threat model}
+Cogitator detects accidental drift and supports forensic diagnosis.
+It does not provide adversarial tamper resistance unless expected roots are
+anchored in a trusted channel (e.g., signed releases or an external transparency log).
+An attacker who can modify both artifacts and expected roots can bypass detection.
+
+\section{System design}
+A run is defined by inputs (task set, seed, flags), plus optional agent mode
+configuration. The harness emits a run bundle of artifacts and two roots
+(Figure~\ref{fig:pipeline}).
+
+\paragraph{Determinism caveat.}
+Semantic determinism is guaranteed for the same binary and the same inputs.
+Cross-platform bit-for-bit identity may require additional constraints
+(e.g., consistent floating-point behavior and locale settings).
+
+\begin{figure}[t]
+  \centering
+  \input{figures/pipeline.tikz}
+  \caption{Cogitator pipeline: inputs drive a run that emits a trace/transcript and artifacts.
+  \ExecutionRoot binds to witnessed metadata and semantic events, while \BundleRoot binds to the
+  full artifact bundle for integrity verification.}
+  \label{fig:pipeline}
+\end{figure}
+
+\section{Witness model}
+Cogitator distinguishes \emph{witnessed} metadata (inputs to the root) from
+\emph{provenance} metadata (environment context). Only witnessed metadata influences
+\ExecutionRoot. Provenance is retained for auditability but excluded from root
+computation to preserve cross-machine stability.
+
+\subsection{Witnessed metadata}
+Witnessed metadata is serialized canonically and includes:
+\begin{itemize}[leftmargin=1.4em]
+  \item \texttt{schema\_version} (trace schema)
+  \item \texttt{seed}, \texttt{requested\_runs}, \texttt{executed\_runs}
+  \item \texttt{parallel} and \texttt{parallel\_strategy}
+  \item \texttt{case\_filter}
+  \item \texttt{entropy\_sources} and \texttt{total\_rng\_calls}
+  \item \texttt{chaos\_profile} summary (when fault injection is enabled)
+  \item \texttt{pass\_threshold} (when a gauntlet threshold is configured)
+\end{itemize}
+
+\subsection{Provenance metadata}
+Provenance metadata is recorded for debugging and audit trails and includes:
+\begin{itemize}[leftmargin=1.4em]
+  \item \texttt{created\_at}
+  \item \texttt{git\_rev}, \texttt{rustc\_version}, \texttt{cargo\_version}
+  \item \texttt{nix\_store\_path} and optional \texttt{nix\_provenance}
+  \item \texttt{agent\_threads} (agent mode throughput setting)
+  \item \texttt{variability\_factors}
+\end{itemize}
+
+\section{Cryptographic commitments}
+Cogitator uses two roots with distinct purposes. \ExecutionRoot captures semantic
+execution; \BundleRoot captures artifact integrity.
+
+\subsection{ExecutionRoot}
+\ExecutionRoot commits to witnessed metadata and a deterministic semantic event stream.
+The event stream is serialized in canonical JSON and fed in order to a BLAKE3-based
+hash accumulator.
+
+\paragraph{Non-agent mode.}
+\ExecutionRoot is computed from witnessed metadata plus all trace events ordered by
+\texttt{(run\_id, step)}. Each trace event includes the schema version, run identifier,
+case identifier, step number, role, content, and entropy counters.
+
+\paragraph{Agent mode.}
+\ExecutionRoot is computed from witnessed metadata, then the agent trace in order, and
+then tool transcript entries per step ordered by \texttt{tool\_call\_idx}. Tool call
+witness entries include the step, tool name, request, outcome, and fault annotation.
+
+\subsection{BundleRoot}
+\BundleRoot commits to the artifact bundle. The harness constructs a witness manifest
+that records per-artifact BLAKE3 hashes and the canonical bundle hash. The bundle hash
+is computed as the BLAKE3 hash of the canonical JSON encoding of the
+\texttt{artifact\_hashes} map, and it is stored as \texttt{bundle\_hash} in the manifest.
+
+\section{Artifacts and modes}
+Table~\ref{tab:artifacts} summarizes the core (non-agent) and agent-mode artifacts.
+All artifacts use canonical JSON encoding where applicable.
+
+\begin{table}[t]
+  \centering
+  \caption{Run artifacts emitted in core and agent modes. Optional artifacts are marked
+  with \textsuperscript{*}.}
+  \label{tab:artifacts}
+  \begin{tabular}{@{}p{0.28\linewidth}p{0.32\linewidth}p{0.32\linewidth}@{}}
+    \toprule
+    Artifact & Core mode & Agent mode \\
+    \midrule
+    \texttt{meta.json} & witnessed + provenance & witnessed + provenance \\
+    \texttt{trace.jsonl} & trace events & --- \\
+    \texttt{results.csv/json} & case results & --- \\
+    \texttt{summary.json} & aggregate metrics & --- \\
+    \texttt{analysis.json} & metadata + summary + results & --- \\
+    \texttt{witness\_root.txt} & \ExecutionRoot & \ExecutionRoot for agent trace \\
+    \texttt{agent\_trace.json} & --- & ordered agent trace \\
+    \texttt{tool\_transcript.json} & --- & tool calls and outcomes \\
+    \texttt{hash\_chain.txt} & --- & linear hash chain \\
+    \texttt{drift\_report.json} & --- & drift report \\
+    \texttt{chaos\_profile.json}\textsuperscript{*} & --- & fault schedule \\
+    \texttt{nix\_provenance.json}\textsuperscript{*} & optional & optional \\
+    \texttt{witness\_manifest.json} & --- & manifest + \BundleRoot \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Agent replay and drift}
+Agent mode treats tool calls as a record/replay boundary. In live runs, tool responses
+are captured in the transcript. In replay runs, responses are replayed verbatim, making
+agent traces deterministic for a fixed seed and transcript. Drift detection compares
+transcripts, tool call ordering, and the resulting \ExecutionRoot to surface semantic
+changes.
+
+\section{Fault injection}
+Cogitator supports deterministic fault injection at tool boundaries. A seeded fault
+schedule decides timeouts, drops, corruptions, or latency simulations and is recorded
+in \texttt{chaos\_profile.json}. The chaos summary is included in witnessed metadata,
+while simulated latency itself is excluded from witness commitments by default.
+
+\section{Verification}
+Verification has two complementary checks:
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Bundle integrity:} recompute per-artifact hashes, verify them against the
+  manifest, and recompute \BundleRoot from the canonical JSON \texttt{artifact\_hashes}.
+  This is the comparison used for CI gating.
+  \item \textbf{Execution integrity:} recompute \ExecutionRoot from witnessed metadata and
+  the semantic event stream (trace for core runs, agent trace + tool transcript for
+  agent runs). This detects semantic drift even when the bundle is intact.
+\end{enumerate}
+CI should compare \BundleRoot for artifact integrity, while \ExecutionRoot highlights
+semantic drift in the witnessed execution stream.
+
+\section{Evaluation}
+Cogitator includes unit tests and property-based tests for determinism invariants.
+At scale, the harness has been exercised on a large run (e.g., 500{,}000 cases) with
+stable \ExecutionRoot and \BundleRoot across repeated runs under identical inputs.
+Dataset fingerprint (SHA-256): \texttt{TODO}.
+
+\section{Related work}
+Cogitator aligns with prior work on deterministic simulation testing, reproducibility
+metadata, and canonical JSON serialization.\cite{TODO-dst,TODO-repro,TODO-jcs}
+
+\section{Limitations and future work}
+Future work includes Merkle-tree inclusion proofs for artifact subsets, cross-platform
+float normalization policies, and signed attestations for expected roots.
+
+\appendix
+\section{Worked example}
+Consider a core run with witnessed metadata $M$ and trace events $E$ ordered by
+\texttt{(run\_id, step)}. \ExecutionRoot is computed by canonicalizing $M$, initializing
+an accumulator, and then hashing each event in order. For an agent run, the event stream
+is replaced by the agent trace followed by tool calls ordered by \texttt{tool\_call\_idx}.
+
+For \BundleRoot, the witness manifest records artifact hashes such as
+\texttt{meta.json} $\rightarrow h_1$, \texttt{trace.jsonl} $\rightarrow h_2$, and so on.
+The bundle hash is computed as the hash of the canonical JSON map
+\texttt{\{artifact\_hashes\}} and stored in \texttt{witness\_manifest.json}. Verification
+recomputes the artifact hashes and bundle hash and compares them to the manifest.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
