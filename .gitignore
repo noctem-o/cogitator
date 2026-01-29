@@ -8,3 +8,11 @@ out_ci/
 out_gauntlet/
 out_replay/
 out_regress/
+
+# local run artifacts
+out_ci/
+ci_out/
+demo_out/
+verify_out*/
+faults_*/
+out_*/
