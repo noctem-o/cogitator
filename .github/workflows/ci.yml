@@ -45,3 +45,10 @@ jobs:
 
       - name: Check gauntlet witness root
         run: bash ./scripts/check_gauntlet_root.sh
+
+      - name: Upload gauntlet witness artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-witness-out_ci
+          path: out_ci/run_0000
