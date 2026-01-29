@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
@@ -27,12 +26,13 @@ pub fn to_value<T: Serialize>(value: &T) -> Result<Value> {
 
 pub fn write_json<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<()> {
     let bytes = to_vec(value)?;
-    let mut file = File::create(path).with_context(|| format!("failed to create {}", label))?;
-    file.write_all(&bytes)
-        .with_context(|| format!("failed to write {}", label))?;
-    file.write_all(b"\n")
-        .with_context(|| format!("failed to write newline for {}", label))?;
-    Ok(())
+    crate::io_utils::write_atomic(path, label, |file| {
+        file.write_all(&bytes)
+            .with_context(|| format!("failed to write {}", label))?;
+        file.write_all(b"\n")
+            .with_context(|| format!("failed to write newline for {}", label))?;
+        Ok(())
+    })
 }
 
 fn canonicalize_value(value: Value) -> Value {

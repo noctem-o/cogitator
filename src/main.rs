@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::builder::ArgPredicate;
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
 
 use crate::agent::Agent;
@@ -13,6 +14,7 @@ mod canonical_json;
 mod chaos;
 mod drift;
 mod eval;
+mod io_utils;
 mod llm;
 mod model;
 mod nix_provenance;
@@ -105,6 +107,9 @@ pub struct DemoDriftArgs {
     about = "Run a deterministic evaluation and emit artifacts.",
     long_about = "Run a deterministic evaluation and emit artifacts.\n\nWitness roots exclude runtime environment details and simulated latency. Thread counts are recorded in provenance only."
 )]
+#[command(
+    group(ArgGroup::new("agent_mode").args(["agent", "replay"]).multiple(false))
+)]
 pub struct RunArgs {
     #[arg(long, default_value_t = 42)]
     pub seed: u64,
@@ -130,44 +135,68 @@ pub struct RunArgs {
     #[arg(long)]
     pub created_at: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, group = "agent_mode")]
     pub agent: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, group = "agent_mode")]
     pub replay: Option<PathBuf>,
 
     #[arg(
         long,
-        default_value_t = 1,
+        requires = "agent_mode",
+        default_value_if("agent_mode", ArgPredicate::IsPresent, "1"),
         help = "Agent/replay only; stored in provenance only"
     )]
-    pub threads: usize,
+    pub threads: Option<usize>,
 
-    #[arg(long, default_value = "off", value_enum, help = "Agent/replay only")]
-    pub faults: FaultToggle,
+    #[arg(
+        long,
+        requires = "agent_mode",
+        default_value_if("agent_mode", ArgPredicate::IsPresent, "off"),
+        value_enum,
+        help = "Agent/replay only"
+    )]
+    pub faults: Option<FaultToggle>,
 
-    #[arg(long, default_value = "none", value_enum, help = "Agent/replay only")]
-    pub fault_profile: FaultProfile,
+    #[arg(
+        long,
+        requires = "agent_mode",
+        default_value_if("agent_mode", ArgPredicate::IsPresent, "none"),
+        value_enum,
+        help = "Agent/replay only"
+    )]
+    pub fault_profile: Option<FaultProfile>,
 
-    #[arg(long, help = "Agent/replay only")]
+    #[arg(long, requires = "agent_mode", help = "Agent/replay only")]
     pub fault_timeout_rate: Option<f64>,
 
-    #[arg(long, help = "Agent/replay only")]
+    #[arg(long, requires = "agent_mode", help = "Agent/replay only")]
     pub fault_corrupt_rate: Option<f64>,
 
-    #[arg(long, help = "Agent/replay only")]
+    #[arg(long, requires = "agent_mode", help = "Agent/replay only")]
     pub fault_drop_rate: Option<f64>,
 
-    #[arg(long, help = "Agent/replay only")]
+    #[arg(long, requires = "agent_mode", help = "Agent/replay only")]
     pub fault_latency_rate: Option<f64>,
 
-    #[arg(long, default_value = "off", value_enum, help = "Agent/replay only")]
-    pub llm: LlmToggle,
+    #[arg(
+        long,
+        requires = "agent_mode",
+        default_value_if("agent_mode", ArgPredicate::IsPresent, "off"),
+        value_enum,
+        help = "Agent/replay only"
+    )]
+    pub llm: Option<LlmToggle>,
 
-    #[arg(long, default_value = "stub", help = "Agent/replay only")]
-    pub llm_model: String,
+    #[arg(
+        long,
+        requires = "agent_mode",
+        default_value_if("agent_mode", ArgPredicate::IsPresent, "stub"),
+        help = "Agent/replay only"
+    )]
+    pub llm_model: Option<String>,
 
-    #[arg(long, help = "Agent/replay only")]
+    #[arg(long, requires = "agent_mode", help = "Agent/replay only")]
     pub llm_seed: Option<u64>,
 
     #[arg(
@@ -177,6 +206,28 @@ pub struct RunArgs {
         help = "Capture Nix provenance (auto|on|off)"
     )]
     pub nix_provenance: nix_provenance::NixProvenanceMode,
+}
+
+impl RunArgs {
+    fn agent_threads(&self) -> usize {
+        self.threads.unwrap_or(1)
+    }
+
+    fn faults_toggle(&self) -> FaultToggle {
+        self.faults.clone().unwrap_or(FaultToggle::Off)
+    }
+
+    fn fault_profile_value(&self) -> FaultProfile {
+        self.fault_profile.clone().unwrap_or(FaultProfile::None)
+    }
+
+    fn llm_toggle(&self) -> LlmToggle {
+        self.llm.clone().unwrap_or(LlmToggle::Off)
+    }
+
+    fn llm_model_value(&self) -> &str {
+        self.llm_model.as_deref().unwrap_or("stub")
+    }
 }
 
 /// Verify a trace against an expected witness root.
@@ -208,22 +259,6 @@ fn main() -> Result<()> {
 fn run(args: RunArgs) -> Result<()> {
     if args.agent.is_some() || args.replay.is_some() {
         return run_agent(args);
-    }
-
-    if args.threads != 1 {
-        anyhow::bail!("--threads is only supported in agent mode (--agent or --replay)");
-    }
-    if args.faults != FaultToggle::Off
-        || args.fault_profile != FaultProfile::None
-        || args.fault_timeout_rate.is_some()
-        || args.fault_corrupt_rate.is_some()
-        || args.fault_drop_rate.is_some()
-        || args.fault_latency_rate.is_some()
-        || args.llm != LlmToggle::Off
-        || args.llm_model != "stub"
-        || args.llm_seed.is_some()
-    {
-        anyhow::bail!("agent-only flags are only supported in agent mode (--agent or --replay)");
     }
 
     let run_ids: Vec<u32> = match args.case {
@@ -264,8 +299,11 @@ fn run(args: RunArgs) -> Result<()> {
 
     let witness_root = compute_witness_root(&metadata.witnessed, &output.trace)?;
     let witness_path = args.out_dir.join("witness_root.txt");
-    fs::write(&witness_path, format!("{}\n", witness_root))
-        .with_context(|| "failed to write witness_root.txt")?;
+    io_utils::write_atomic_string(
+        &witness_path,
+        "witness_root.txt",
+        &format!("{}\n", witness_root),
+    )?;
 
     let csv_path = args.out_dir.join("results.csv");
     eval::write_results(&csv_path, &output.results)?;
@@ -278,12 +316,15 @@ fn run(args: RunArgs) -> Result<()> {
 
     let manifest = model::ArtifactManifest {
         meta_json: rel_artifact_path(&args.out_dir, &meta_path),
-        trace_jsonl: rel_artifact_path(&args.out_dir, &trace_path),
-        results_csv: rel_artifact_path(&args.out_dir, &csv_path),
-        results_json: rel_artifact_path(&args.out_dir, &results_json_path),
-        summary_json: rel_artifact_path(&args.out_dir, &summary_json_path),
-        witness_root_txt: rel_artifact_path(&args.out_dir, &witness_path),
-        analysis_json: rel_artifact_path(&args.out_dir, &args.out_dir.join("analysis.json")),
+        trace_jsonl: Some(rel_artifact_path(&args.out_dir, &trace_path)),
+        results_csv: Some(rel_artifact_path(&args.out_dir, &csv_path)),
+        results_json: Some(rel_artifact_path(&args.out_dir, &results_json_path)),
+        summary_json: Some(rel_artifact_path(&args.out_dir, &summary_json_path)),
+        witness_root_txt: Some(rel_artifact_path(&args.out_dir, &witness_path)),
+        analysis_json: Some(rel_artifact_path(
+            &args.out_dir,
+            &args.out_dir.join("analysis.json"),
+        )),
         nix_provenance_json: nix_provenance_path
             .as_ref()
             .map(|path| rel_artifact_path(&args.out_dir, path)),
@@ -427,8 +468,11 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
             let hash_chain =
                 drift::build_hash_chain(&demo_run.agent_trace, &demo_run.transcript.entries)?;
             let hash_chain_path = scenario_dir.join("hash_chain.txt");
-            fs::write(&hash_chain_path, hash_chain.join("\n") + "\n")
-                .with_context(|| "failed to write hash_chain.txt")?;
+            io_utils::write_atomic_string(
+                &hash_chain_path,
+                "hash_chain.txt",
+                &(hash_chain.join("\n") + "\n"),
+            )?;
 
             let witness_root = compute_agent_witness_root(
                 &demo_run.metadata.witnessed,
@@ -436,8 +480,11 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
                 &demo_run.transcript.entries,
             )?;
             let witness_root_path = scenario_dir.join("witness_root.txt");
-            fs::write(&witness_root_path, format!("{}\n", witness_root))
-                .with_context(|| "failed to write witness_root.txt")?;
+            io_utils::write_atomic_string(
+                &witness_root_path,
+                "witness_root.txt",
+                &format!("{}\n", witness_root),
+            )?;
 
             let drift_report_path = scenario_dir.join("drift_report.json");
             canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")?;
@@ -514,7 +561,8 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
 }
 
 fn run_agent(args: RunArgs) -> Result<()> {
-    if args.threads == 0 {
+    let agent_threads = args.agent_threads();
+    if agent_threads == 0 {
         anyhow::bail!("--threads must be at least 1");
     }
 
@@ -531,7 +579,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
         nix_provenance::collect_nix_provenance(args.nix_provenance.clone(), Path::new("."))?;
 
     let thread_pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(args.threads)
+        .num_threads(agent_threads)
         .build()?;
 
     thread_pool.install(|| -> Result<()> {
@@ -617,8 +665,8 @@ fn run_agent(args: RunArgs) -> Result<()> {
             };
 
             let llm_config = agent::LlmConfig {
-                enabled: matches!(args.llm, LlmToggle::On),
-                model: args.llm_model.clone(),
+                enabled: matches!(args.llm_toggle(), LlmToggle::On),
+                model: args.llm_model_value().to_string(),
                 seed: args.llm_seed,
             };
             let mut agent = agent::ClawdbotAgent::new(llm_config);
@@ -657,8 +705,11 @@ fn run_agent(args: RunArgs) -> Result<()> {
 
             let hash_chain = drift::build_hash_chain(&agent_trace, &transcript_record.entries)?;
             let hash_chain_path = run_dir.join("hash_chain.txt");
-            fs::write(&hash_chain_path, hash_chain.join("\n") + "\n")
-                .with_context(|| "failed to write hash_chain.txt")?;
+            io_utils::write_atomic_string(
+                &hash_chain_path,
+                "hash_chain.txt",
+                &(hash_chain.join("\n") + "\n"),
+            )?;
 
             let agent_witness_root = compute_agent_witness_root(
                 &metadata.witnessed,
@@ -666,8 +717,11 @@ fn run_agent(args: RunArgs) -> Result<()> {
                 &transcript_record.entries,
             )?;
             let agent_witness_path = run_dir.join("witness_root.txt");
-            fs::write(&agent_witness_path, format!("{}\n", agent_witness_root))
-                .with_context(|| "failed to write witness_root.txt")?;
+            io_utils::write_atomic_string(
+                &agent_witness_path,
+                "witness_root.txt",
+                &format!("{}\n", agent_witness_root),
+            )?;
 
             let drift_report = if let Some((_, expected_transcript, _)) = replay_bundle.as_ref() {
                 let mut report =
@@ -733,12 +787,12 @@ fn run_agent(args: RunArgs) -> Result<()> {
 
             let _manifest = model::ArtifactManifest {
                 meta_json: meta_path.display().to_string(),
-                trace_jsonl: String::new(),
-                results_csv: String::new(),
-                results_json: String::new(),
-                summary_json: String::new(),
-                witness_root_txt: String::new(),
-                analysis_json: String::new(),
+                trace_jsonl: None,
+                results_csv: None,
+                results_json: None,
+                summary_json: None,
+                witness_root_txt: None,
+                analysis_json: None,
                 nix_provenance_json: nix_provenance_path
                     .as_ref()
                     .map(|path| path.display().to_string()),
@@ -827,17 +881,17 @@ fn verify_cmd(args: VerifyArgs) -> Result<()> {
 }
 
 fn write_trace(path: &Path, events: &[model::TraceEvent]) -> Result<()> {
-    let file = File::create(path).with_context(|| "failed to create trace.jsonl")?;
-    let mut writer = BufWriter::new(file);
-
-    for event in events {
-        let bytes = trace::encode_event(event)?;
-        writer.write_all(&bytes)?;
-        writer.write_all(b"\n")?;
-    }
-
-    writer.flush()?;
-    Ok(())
+    let ordered = ordered_trace_events(events);
+    io_utils::write_atomic(path, "trace.jsonl", |file| {
+        let mut writer = BufWriter::new(file);
+        for event in ordered {
+            let bytes = trace::encode_event(event)?;
+            writer.write_all(&bytes)?;
+            writer.write_all(b"\n")?;
+        }
+        writer.flush()?;
+        Ok(())
+    })
 }
 
 fn compute_witness_root(
@@ -847,12 +901,20 @@ fn compute_witness_root(
     let metadata_bytes = trace::encode_witnessed_metadata(metadata)?;
     let mut witness = witness::Witness::new(&metadata_bytes)?;
 
-    for event in events {
+    let ordered = ordered_trace_events(events);
+    for event in ordered {
         let event_bytes = trace::encode_event(event)?;
         witness.update(&event_bytes)?;
     }
 
     Ok(witness.finalize_hex())
+}
+
+fn ordered_trace_events(events: &[model::TraceEvent]) -> Vec<&model::TraceEvent> {
+    let mut ordered: Vec<&model::TraceEvent> = events.iter().collect();
+    // Stable ordering by run_id + step ensures deterministic hashing across parallel runs.
+    ordered.sort_by_key(|event| (event.run_id, event.step));
+    ordered
 }
 
 fn compute_agent_witness_root(
@@ -880,7 +942,7 @@ fn build_metadata(
         &rustc_version,
         &cargo_version,
         &nix_store_path,
-        args.threads,
+        args.agent_threads(),
         nix_provenance.as_ref(),
     );
 
@@ -927,7 +989,7 @@ fn build_agent_metadata(
         &rustc_version,
         &cargo_version,
         &nix_store_path,
-        args.threads,
+        args.agent_threads(),
         nix_provenance.as_ref(),
     );
 
@@ -959,7 +1021,7 @@ fn build_agent_metadata(
             rustc_version,
             cargo_version,
             nix_store_path,
-            agent_threads: Some(args.threads),
+            agent_threads: Some(args.agent_threads()),
             nix_provenance,
             variability_factors,
         },
@@ -983,8 +1045,8 @@ fn resolve_created_at(args: &RunArgs) -> String {
 }
 
 fn resolve_chaos_profile(args: &RunArgs, seed: u64) -> chaos::ChaosProfile {
-    let enabled = matches!(args.faults, FaultToggle::On);
-    let profile_name = match args.fault_profile {
+    let enabled = matches!(args.faults_toggle(), FaultToggle::On);
+    let profile_name = match args.fault_profile_value() {
         FaultProfile::None => "none",
         FaultProfile::Ci => "ci",
         FaultProfile::Stress => "stress",
@@ -1034,15 +1096,15 @@ fn run_demo_agent(
             created_at: None,
             agent: Some("clawdbot".to_string()),
             replay: None,
-            threads: 1,
-            faults: FaultToggle::Off,
-            fault_profile: FaultProfile::None,
+            threads: Some(1),
+            faults: Some(FaultToggle::Off),
+            fault_profile: Some(FaultProfile::None),
             fault_timeout_rate: None,
             fault_corrupt_rate: None,
             fault_drop_rate: None,
             fault_latency_rate: None,
-            llm: LlmToggle::Off,
-            llm_model: "stub".to_string(),
+            llm: Some(LlmToggle::Off),
+            llm_model: Some("stub".to_string()),
             llm_seed: None,
             nix_provenance: nix_provenance::NixProvenanceMode::Off,
         },
@@ -1185,6 +1247,33 @@ fn command_version(command: &str) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn clap_rejects_agent_only_flags_without_agent_mode() {
+        let result = Cli::try_parse_from(["cogitator", "run", "--threads", "2"]);
+        assert!(result.is_err());
+        let result = Cli::try_parse_from(["cogitator", "run", "--llm", "on"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn clap_rejects_agent_mode_conflicts() {
+        let result =
+            Cli::try_parse_from(["cogitator", "run", "--agent", "clawdbot", "--replay", "out"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn clap_accepts_agent_mode_defaults() {
+        let result = Cli::try_parse_from(["cogitator", "run", "--agent", "clawdbot"]);
+        assert!(result.is_ok());
+    }
 }
 
 fn read_trimmed(path: &Path) -> Result<String> {

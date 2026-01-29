@@ -3,6 +3,7 @@ pub mod canonical_json;
 pub mod chaos;
 pub mod drift;
 pub mod eval;
+pub mod io_utils;
 pub mod llm;
 pub mod model;
 pub mod nix_provenance;

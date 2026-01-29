@@ -37,12 +37,12 @@ pub struct Summary {
 #[serde(deny_unknown_fields)]
 pub struct ArtifactManifest {
     pub meta_json: String,
-    pub trace_jsonl: String,
-    pub results_csv: String,
-    pub results_json: String,
-    pub summary_json: String,
-    pub witness_root_txt: String,
-    pub analysis_json: String,
+    pub trace_jsonl: Option<String>,
+    pub results_csv: Option<String>,
+    pub results_json: Option<String>,
+    pub summary_json: Option<String>,
+    pub witness_root_txt: Option<String>,
+    pub analysis_json: Option<String>,
     pub nix_provenance_json: Option<String>,
     pub agent_trace_json: Option<String>,
     pub tool_transcript_json: Option<String>,

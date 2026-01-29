@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use csv::Writer;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::prelude::*;
@@ -144,35 +144,36 @@ fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
 
 /// Write CSV results (stable ordering + ergonomic Path API)
 pub fn write_results(path: &Path, results: &[CaseResult]) -> Result<()> {
-    let mut writer = Writer::from_path(path).with_context(|| "failed to open CSV output")?;
-
-    writer.write_record([
-        "run_id",
-        "case_id",
-        "difficulty",
-        "score",
-        "passed",
-        "rng_calls",
-    ])?;
-
-    // Belt-and-suspenders: ensure deterministic CSV row order.
-    let mut ordered: Vec<&CaseResult> = results.iter().collect();
-    ordered.sort_by_key(|r| r.run_id);
-
-    for r in ordered {
+    crate::io_utils::write_atomic(path, "results.csv", |file| {
+        let mut writer = Writer::from_writer(file);
         writer.write_record([
-            r.run_id.to_string(),
-            r.case_id.clone(),
-            // More precision makes diffs and downstream math less cursed.
-            format!("{:.6}", r.difficulty),
-            format!("{:.6}", r.score),
-            r.passed.to_string(),
-            r.rng_calls.to_string(),
+            "run_id",
+            "case_id",
+            "difficulty",
+            "score",
+            "passed",
+            "rng_calls",
         ])?;
-    }
 
-    writer.flush()?;
-    Ok(())
+        // Belt-and-suspenders: ensure deterministic CSV row order.
+        let mut ordered: Vec<&CaseResult> = results.iter().collect();
+        ordered.sort_by_key(|r| r.run_id);
+
+        for r in ordered {
+            writer.write_record([
+                r.run_id.to_string(),
+                r.case_id.clone(),
+                // More precision makes diffs and downstream math less cursed.
+                format!("{:.6}", r.difficulty),
+                format!("{:.6}", r.score),
+                r.passed.to_string(),
+                r.rng_calls.to_string(),
+            ])?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    })
 }
 
 /// Summary statistics (stable + less float wobble)

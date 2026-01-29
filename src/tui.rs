@@ -107,13 +107,25 @@ pub fn launch(
             let mut artifact_text = vec![
                 Line::from("Artifacts:"),
                 Line::from(format!("meta.json → {}", manifest.meta_json)),
-                Line::from(format!("trace.jsonl → {}", manifest.trace_jsonl)),
-                Line::from(format!("results.csv → {}", manifest.results_csv)),
-                Line::from(format!("results.json → {}", manifest.results_json)),
-                Line::from(format!("summary.json → {}", manifest.summary_json)),
-                Line::from(format!("analysis.json → {}", manifest.analysis_json)),
-                Line::from(format!("witness_root.txt → {}", manifest.witness_root_txt)),
             ];
+            if let Some(path) = &manifest.trace_jsonl {
+                artifact_text.push(Line::from(format!("trace.jsonl → {}", path)));
+            }
+            if let Some(path) = &manifest.results_csv {
+                artifact_text.push(Line::from(format!("results.csv → {}", path)));
+            }
+            if let Some(path) = &manifest.results_json {
+                artifact_text.push(Line::from(format!("results.json → {}", path)));
+            }
+            if let Some(path) = &manifest.summary_json {
+                artifact_text.push(Line::from(format!("summary.json → {}", path)));
+            }
+            if let Some(path) = &manifest.analysis_json {
+                artifact_text.push(Line::from(format!("analysis.json → {}", path)));
+            }
+            if let Some(path) = &manifest.witness_root_txt {
+                artifact_text.push(Line::from(format!("witness_root.txt → {}", path)));
+            }
             if let Some(path) = &manifest.nix_provenance_json {
                 artifact_text.push(Line::from(format!("nix_provenance.json → {}", path)));
             }
