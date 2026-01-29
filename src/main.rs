@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use clap::builder::ArgPredicate;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::agent::Agent;
+use csv::Writer;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -72,6 +74,13 @@ pub enum LlmToggle {
     Off,
 }
 
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum EmitMode {
+    Full,
+    Summary,
+    Minimal,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum DemoCommand {
     Drift(DemoDriftArgs),
@@ -133,9 +142,28 @@ pub struct RunArgs {
         long,
         default_value_t = true,
         action = clap::ArgAction::Set,
-        value_parser = clap::value_parser!(bool)
+        value_parser = clap::value_parser!(bool),
+        num_args = 0..=1,
+        default_missing_value = "true",
+        help = "Enable parallel evaluation (use --parallel=false to disable)"
     )]
     pub parallel: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0.5,
+        value_parser = parse_pass_threshold,
+        help = "Pass threshold in [0.0, 1.0] used to mark passes (default: 0.5)"
+    )]
+    pub pass_threshold: f32,
+
+    #[arg(
+        long,
+        default_value = "full",
+        value_enum,
+        help = "Emit mode: full (all artifacts; trace can be large), summary (no trace/results.json/analysis.json), minimal (meta+summary+witness only)"
+    )]
+    pub emit: EmitMode,
 
     #[arg(long)]
     pub created_at: Option<String>,
@@ -266,13 +294,12 @@ fn run(args: RunArgs) -> Result<()> {
         return run_agent(args);
     }
 
+    let emit_mode = args.emit.clone();
+
     let run_ids: Vec<u32> = match args.case {
         Some(case_id) => vec![case_id],
         None => (0..args.runs).collect(),
     };
-
-    let output = eval::run_with_trace(args.seed, &run_ids, args.parallel);
-    let (summary, pass_count, fail_count) = eval::summarize_with_counts(&output.results);
 
     if args.clean && args.out_dir.exists() {
         fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean output dir")?;
@@ -282,12 +309,76 @@ fn run(args: RunArgs) -> Result<()> {
 
     let nix_provenance =
         nix_provenance::collect_nix_provenance(args.nix_provenance.clone(), Path::new("."))?;
-    let metadata = build_metadata(
-        &args,
-        output.total_rng_calls,
-        run_ids.len() as u32,
-        nix_provenance.clone(),
-    );
+
+    let chunk_size = 100_000usize;
+    let mut stream_metadata: Option<model::RunMetadata> = None;
+    let (summary, pass_count, fail_count, total_rng_calls, witness_root, output) = if emit_mode
+        == EmitMode::Full
+    {
+        let output = eval::run_with_trace(args.seed, &run_ids, args.pass_threshold, args.parallel);
+        let (summary, pass_count, fail_count) = eval::summarize_with_counts(&output.results);
+        let witness_root = String::new();
+        (
+            summary,
+            pass_count,
+            fail_count,
+            output.total_rng_calls,
+            witness_root,
+            Some(output),
+        )
+    } else {
+        let expected_total_rng_calls = run_ids.len() as u64;
+        let metadata = build_metadata(
+            &args,
+            expected_total_rng_calls,
+            run_ids.len() as u32,
+            nix_provenance.clone(),
+        );
+        stream_metadata = Some(metadata.clone());
+        let trace_path: Option<PathBuf> = None;
+        let csv_path = if emit_mode == EmitMode::Summary {
+            Some(args.out_dir.join("results.csv"))
+        } else {
+            None
+        };
+        let result = stream_eval(StreamEvalConfig {
+            seed: args.seed,
+            run_ids: &run_ids,
+            pass_threshold: args.pass_threshold,
+            parallel: args.parallel,
+            chunk_size,
+            metadata: &metadata.witnessed,
+            trace_path: trace_path.as_deref(),
+            csv_path: csv_path.as_deref(),
+        })?;
+
+        if result.total_rng_calls != expected_total_rng_calls {
+            anyhow::bail!(
+                "streamed total_rng_calls {} did not match expected {}",
+                result.total_rng_calls,
+                expected_total_rng_calls
+            );
+        }
+        (
+            result.summary,
+            result.pass_count,
+            result.fail_count,
+            result.total_rng_calls,
+            result.witness_root,
+            None,
+        )
+    };
+
+    let metadata = if let Some(metadata) = stream_metadata {
+        metadata
+    } else {
+        build_metadata(
+            &args,
+            total_rng_calls,
+            run_ids.len() as u32,
+            nix_provenance.clone(),
+        )
+    };
     let meta_path = args.out_dir.join("meta.json");
     canonical_json::write_json(&meta_path, &metadata, "meta.json")?;
 
@@ -300,9 +391,13 @@ fn run(args: RunArgs) -> Result<()> {
     };
 
     let trace_path = args.out_dir.join("trace.jsonl");
-    write_trace(&trace_path, &output.trace)?;
-
-    let witness_root = compute_witness_root(&metadata.witnessed, &output.trace)?;
+    let witness_root = if emit_mode == EmitMode::Full {
+        let output = output.as_ref().expect("output exists for full emit");
+        write_trace(&trace_path, &output.trace)?;
+        compute_witness_root(&metadata.witnessed, &output.trace)?
+    } else {
+        witness_root
+    };
     let witness_path = args.out_dir.join("witness_root.txt");
     io_utils::write_atomic_string(
         &witness_path,
@@ -311,25 +406,47 @@ fn run(args: RunArgs) -> Result<()> {
     )?;
 
     let csv_path = args.out_dir.join("results.csv");
-    eval::write_results(&csv_path, &output.results)?;
+    if emit_mode == EmitMode::Full {
+        let output = output.as_ref().expect("output exists for full emit");
+        eval::write_results(&csv_path, &output.results)?;
+    }
 
     let results_json_path = args.out_dir.join("results.json");
-    canonical_json::write_json(&results_json_path, &output.results, "results.json")?;
+    if emit_mode == EmitMode::Full {
+        let output = output.as_ref().expect("output exists for full emit");
+        canonical_json::write_json(&results_json_path, &output.results, "results.json")?;
+    }
 
     let summary_json_path = args.out_dir.join("summary.json");
     canonical_json::write_json(&summary_json_path, &summary, "summary.json")?;
 
     let manifest = model::ArtifactManifest {
         meta_json: rel_artifact_path(&args.out_dir, &meta_path),
-        trace_jsonl: Some(rel_artifact_path(&args.out_dir, &trace_path)),
-        results_csv: Some(rel_artifact_path(&args.out_dir, &csv_path)),
-        results_json: Some(rel_artifact_path(&args.out_dir, &results_json_path)),
+        trace_jsonl: if emit_mode == EmitMode::Full {
+            Some(rel_artifact_path(&args.out_dir, &trace_path))
+        } else {
+            None
+        },
+        results_csv: if emit_mode == EmitMode::Full || emit_mode == EmitMode::Summary {
+            Some(rel_artifact_path(&args.out_dir, &csv_path))
+        } else {
+            None
+        },
+        results_json: if emit_mode == EmitMode::Full {
+            Some(rel_artifact_path(&args.out_dir, &results_json_path))
+        } else {
+            None
+        },
         summary_json: Some(rel_artifact_path(&args.out_dir, &summary_json_path)),
         witness_root_txt: Some(rel_artifact_path(&args.out_dir, &witness_path)),
-        analysis_json: Some(rel_artifact_path(
-            &args.out_dir,
-            &args.out_dir.join("analysis.json"),
-        )),
+        analysis_json: if emit_mode == EmitMode::Full {
+            Some(rel_artifact_path(
+                &args.out_dir,
+                &args.out_dir.join("analysis.json"),
+            ))
+        } else {
+            None
+        },
         nix_provenance_json: nix_provenance_path
             .as_ref()
             .map(|path| rel_artifact_path(&args.out_dir, path)),
@@ -341,39 +458,55 @@ fn run(args: RunArgs) -> Result<()> {
         chaos_profile_json: None,
     };
 
-    let analysis_bundle = model::AnalysisBundle {
-        metadata: metadata.clone(),
-        summary: summary.clone(),
-        results: output.results.clone(),
-        witness_root: witness_root.clone(),
-        artifacts: manifest.clone(),
-    };
-
     let analysis_path = args.out_dir.join("analysis.json");
-    canonical_json::write_json(&analysis_path, &analysis_bundle, "analysis.json")?;
+    if emit_mode == EmitMode::Full {
+        let output = output.as_ref().expect("output exists for full emit");
+        let analysis_bundle = model::AnalysisBundle {
+            metadata: metadata.clone(),
+            summary: summary.clone(),
+            results: output.results.clone(),
+            witness_root: witness_root.clone(),
+            artifacts: manifest.clone(),
+        };
+        canonical_json::write_json(&analysis_path, &analysis_bundle, "analysis.json")?;
+    }
 
-    let tui_enabled = !args.no_tui && cfg!(feature = "tui");
+    let tui_enabled = emit_mode == EmitMode::Full && !args.no_tui && cfg!(feature = "tui");
     if tui_enabled {
         #[cfg(feature = "tui")]
-        tui::launch(
-            args.seed,
-            run_ids.len() as u32,
-            &output.results,
-            &summary,
-            &metadata,
-            &manifest,
-        )?;
+        if let Some(output) = output.as_ref() {
+            tui::launch(
+                args.seed,
+                run_ids.len() as u32,
+                &output.results,
+                &summary,
+                &metadata,
+                &manifest,
+            )?;
+        }
     } else {
         if !args.no_tui {
-            println!("TUI disabled (missing feature).");
+            if emit_mode == EmitMode::Full {
+                println!("TUI disabled (missing feature).");
+            } else {
+                println!("TUI disabled (emit mode {}).", emit_mode_label(&emit_mode));
+            }
         }
         println!("Artifacts:");
         println!("  meta.json: {}", meta_path.display());
-        println!("  trace.jsonl: {}", trace_path.display());
-        println!("  results.csv: {}", csv_path.display());
-        println!("  results.json: {}", results_json_path.display());
+        if emit_mode == EmitMode::Full {
+            println!("  trace.jsonl: {}", trace_path.display());
+        }
+        if emit_mode == EmitMode::Full || emit_mode == EmitMode::Summary {
+            println!("  results.csv: {}", csv_path.display());
+        }
+        if emit_mode == EmitMode::Full {
+            println!("  results.json: {}", results_json_path.display());
+        }
         println!("  summary.json: {}", summary_json_path.display());
-        println!("  analysis.json: {}", analysis_path.display());
+        if emit_mode == EmitMode::Full {
+            println!("  analysis.json: {}", analysis_path.display());
+        }
         println!("  witness_root.txt: {}", witness_path.display());
         if let Some(path) = nix_provenance_path.as_ref() {
             println!("  nix_provenance.json: {}", path.display());
@@ -391,7 +524,7 @@ fn run(args: RunArgs) -> Result<()> {
     );
     println!(
         "Passed={} Failed={} total_rng_calls={}",
-        pass_count, fail_count, output.total_rng_calls
+        pass_count, fail_count, total_rng_calls
     );
 
     Ok(())
@@ -922,6 +1055,113 @@ fn ordered_trace_events(events: &[model::TraceEvent]) -> Vec<&model::TraceEvent>
     ordered
 }
 
+struct StreamingRunOutput {
+    summary: model::Summary,
+    pass_count: usize,
+    fail_count: usize,
+    total_rng_calls: u64,
+    witness_root: String,
+}
+
+struct StreamEvalConfig<'a> {
+    seed: u64,
+    run_ids: &'a [u32],
+    pass_threshold: f32,
+    parallel: bool,
+    chunk_size: usize,
+    metadata: &'a model::WitnessedMetadata,
+    trace_path: Option<&'a Path>,
+    csv_path: Option<&'a Path>,
+}
+
+fn stream_eval(config: StreamEvalConfig<'_>) -> Result<StreamingRunOutput> {
+    let metadata_bytes = trace::encode_witnessed_metadata(config.metadata)?;
+    let mut witness = witness::Witness::new(&metadata_bytes)?;
+    let mut stats = eval::SummaryStats::default();
+    let mut total_rng_calls: u64 = 0;
+
+    let mut trace_writer = if let Some(path) = config.trace_path {
+        let file = File::create(path).with_context(|| "failed to create trace.jsonl")?;
+        Some(BufWriter::new(file))
+    } else {
+        None
+    };
+
+    let mut csv_writer = if let Some(path) = config.csv_path {
+        let file = File::create(path).with_context(|| "failed to create results.csv")?;
+        let mut writer = Writer::from_writer(BufWriter::new(file));
+        writer.write_record([
+            "run_id",
+            "case_id",
+            "difficulty",
+            "score",
+            "passed",
+            "rng_calls",
+        ])?;
+        Some(writer)
+    } else {
+        None
+    };
+
+    for chunk in config.run_ids.chunks(config.chunk_size) {
+        let mut runs: Vec<eval::CaseRun> = if config.parallel {
+            chunk
+                .par_iter()
+                .map(|&run_id| eval::evaluate_case(config.seed, run_id, config.pass_threshold))
+                .collect()
+        } else {
+            chunk
+                .iter()
+                .map(|&run_id| eval::evaluate_case(config.seed, run_id, config.pass_threshold))
+                .collect()
+        };
+
+        runs.sort_by_key(|run| run.result.run_id);
+
+        for run in runs {
+            total_rng_calls += run.rng_calls as u64;
+            stats.update(run.result.score, run.result.passed);
+
+            if let Some(writer) = csv_writer.as_mut() {
+                writer.write_record([
+                    run.result.run_id.to_string(),
+                    run.result.case_id.clone(),
+                    format!("{:.6}", run.result.difficulty),
+                    format!("{:.6}", run.result.score),
+                    run.result.passed.to_string(),
+                    run.result.rng_calls.to_string(),
+                ])?;
+            }
+
+            for event in run.events {
+                let event_bytes = trace::encode_event(&event)?;
+                witness.update(&event_bytes)?;
+                if let Some(writer) = trace_writer.as_mut() {
+                    writer.write_all(&event_bytes)?;
+                    writer.write_all(b"\n")?;
+                }
+            }
+        }
+    }
+
+    if let Some(writer) = csv_writer.as_mut() {
+        writer.flush()?;
+    }
+    if let Some(writer) = trace_writer.as_mut() {
+        writer.flush()?;
+    }
+
+    let (summary, pass_count, fail_count) = stats.finalize();
+
+    Ok(StreamingRunOutput {
+        summary,
+        pass_count,
+        fail_count,
+        total_rng_calls,
+        witness_root: witness.finalize_hex(),
+    })
+}
+
 fn compute_agent_witness_root(
     metadata: &model::WitnessedMetadata,
     agent_trace: &[agent::AgentTraceEntry],
@@ -957,6 +1197,7 @@ fn build_metadata(
             seed: args.seed,
             requested_runs: args.runs,
             executed_runs,
+            pass_threshold: format_pass_threshold(args.pass_threshold),
             parallel: args.parallel,
             parallel_strategy: parallel_strategy(args.parallel),
             case_filter: args.case,
@@ -1004,6 +1245,7 @@ fn build_agent_metadata(
             seed: args.seed,
             requested_runs: 1,
             executed_runs: 1,
+            pass_threshold: format_pass_threshold(args.pass_threshold),
             parallel: false,
             parallel_strategy: "sequential".to_string(),
             case_filter: args.case,
@@ -1098,6 +1340,8 @@ fn run_demo_agent(
             clean: false,
             no_tui: true,
             parallel: false,
+            pass_threshold: 0.5,
+            emit: EmitMode::Full,
             created_at: None,
             agent: Some("clawdbot".to_string()),
             replay: None,
@@ -1256,7 +1500,7 @@ fn command_version(command: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    use super::{Cli, CommandLine};
     use clap::Parser;
 
     #[test]
@@ -1279,9 +1523,60 @@ mod tests {
         let result = Cli::try_parse_from(["cogitator", "run", "--agent", "clawdbot"]);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn clap_accepts_parallel_flag_and_bool() {
+        let result = Cli::try_parse_from(["cogitator", "run", "--parallel"]);
+        assert!(result.is_ok());
+
+        let parsed =
+            Cli::try_parse_from(["cogitator", "run", "--parallel", "false"]).expect("parse ok");
+        match parsed.command {
+            CommandLine::Run(args) => assert!(!args.parallel),
+            _ => panic!("expected run args"),
+        }
+
+        let parsed =
+            Cli::try_parse_from(["cogitator", "run", "--parallel=false"]).expect("parse ok");
+        match parsed.command {
+            CommandLine::Run(args) => assert!(!args.parallel),
+            _ => panic!("expected run args"),
+        }
+    }
+
+    #[test]
+    fn clap_rejects_invalid_pass_threshold() {
+        let result = Cli::try_parse_from(["cogitator", "run", "--pass-threshold", "1.5"]);
+        assert!(result.is_err());
+    }
 }
 
 fn read_trimmed(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path).with_context(|| "failed to read witness file")?;
     Ok(content.trim().to_string())
+}
+
+fn parse_pass_threshold(value: &str) -> Result<f32, String> {
+    let parsed: f32 = value
+        .parse()
+        .map_err(|_| format!("invalid pass threshold: {}", value))?;
+    if !(0.0..=1.0).contains(&parsed) {
+        return Err(format!(
+            "pass threshold must be between 0.0 and 1.0 (got {})",
+            parsed
+        ));
+    }
+    Ok(parsed)
+}
+
+fn format_pass_threshold(value: f32) -> String {
+    format!("{:.6}", value)
+}
+
+fn emit_mode_label(mode: &EmitMode) -> &'static str {
+    match mode {
+        EmitMode::Full => "full",
+        EmitMode::Summary => "summary",
+        EmitMode::Minimal => "minimal",
+    }
 }

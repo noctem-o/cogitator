@@ -12,7 +12,7 @@ fn preview_80(s: &str) -> String {
     let mut out = String::new();
     for (i, ch) in s.chars().enumerate() {
         if i >= N {
-            out.push_str("…");
+            out.push('…');
             break;
         }
         out.push(ch);

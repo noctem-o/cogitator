@@ -42,6 +42,7 @@ fn verify_witness_bundle_recomputes_hashes() {
             seed: 7,
             requested_runs: 1,
             executed_runs: 1,
+            pass_threshold: "0.500000".to_string(),
             parallel: false,
             parallel_strategy: "sequential".to_string(),
             case_filter: Some(0),

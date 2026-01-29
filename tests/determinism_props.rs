@@ -74,13 +74,14 @@ proptest! {
                     .num_threads(*threads)
                     .build()
                     .unwrap()
-                    .install(|| eval::run_with_trace(seed, &run_ids, true));
+                    .install(|| eval::run_with_trace(seed, &run_ids, 0.5, true));
 
                 let metadata = WitnessedMetadata {
                     schema_version: TRACE_SCHEMA_VERSION,
                     seed,
                     requested_runs: runs,
                     executed_runs: runs,
+                    pass_threshold: "0.500000".to_string(),
                     parallel: true,
                     parallel_strategy: "rayon/ordered-run-ids".to_string(),
                     case_filter: None,
@@ -124,6 +125,7 @@ proptest! {
             seed,
             requested_runs: 1,
             executed_runs: 1,
+            pass_threshold: "0.500000".to_string(),
             parallel: false,
             parallel_strategy: "sequential".to_string(),
             case_filter: Some(0),
@@ -245,6 +247,7 @@ fn witness_root_sorts_tool_calls_by_index() {
         seed: 7,
         requested_runs: 1,
         executed_runs: 1,
+        pass_threshold: "0.500000".to_string(),
         parallel: false,
         parallel_strategy: "sequential".to_string(),
         case_filter: None,
@@ -306,6 +309,7 @@ fn llm_stub_record_replay_deterministic() {
         seed,
         requested_runs: 1,
         executed_runs: 1,
+        pass_threshold: "0.500000".to_string(),
         parallel: false,
         parallel_strategy: "sequential".to_string(),
         case_filter: Some(0),
@@ -351,6 +355,7 @@ fn llm_stub_thread_invariance() {
         seed,
         requested_runs: 1,
         executed_runs: 1,
+        pass_threshold: "0.500000".to_string(),
         parallel: false,
         parallel_strategy: "sequential".to_string(),
         case_filter: Some(0),
@@ -437,6 +442,7 @@ fn agent_witness_root_invariant_across_thread_counts() {
                         seed: 13,
                         requested_runs: 1,
                         executed_runs: 1,
+                        pass_threshold: "0.500000".to_string(),
                         parallel: false,
                         parallel_strategy: "sequential".to_string(),
                         case_filter: None,

@@ -76,6 +76,7 @@ pub struct WitnessedMetadata {
     pub seed: u64,
     pub requested_runs: u32,
     pub executed_runs: u32,
+    pub pass_threshold: String,
     pub parallel: bool,
     pub parallel_strategy: String,
     pub case_filter: Option<u32>,

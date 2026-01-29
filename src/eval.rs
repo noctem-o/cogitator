@@ -13,40 +13,92 @@ pub struct RunOutput {
     pub total_rng_calls: u64,
 }
 
-struct CaseRun {
-    result: CaseResult,
-    events: Vec<TraceEvent>,
-    rng_calls: u32,
+pub(crate) struct CaseRun {
+    pub(crate) result: CaseResult,
+    pub(crate) events: Vec<TraceEvent>,
+    pub(crate) rng_calls: u32,
+}
+
+#[derive(Default)]
+pub struct SummaryStats {
+    count: u64,
+    pass_count: u64,
+    fail_count: u64,
+    mean: f64,
+}
+
+impl SummaryStats {
+    pub fn update(&mut self, score: f32, passed: bool) {
+        let x = score as f64;
+        self.count += 1;
+        if passed {
+            self.pass_count += 1;
+        } else {
+            self.fail_count += 1;
+        }
+
+        let delta = x - self.mean;
+        self.mean += delta / self.count as f64;
+        let _delta2 = x - self.mean;
+    }
+
+    pub fn finalize(&self) -> (Summary, usize, usize) {
+        if self.count == 0 {
+            return (
+                Summary {
+                    pass_rate: 0.0,
+                    avg_score: 0.0,
+                },
+                0,
+                0,
+            );
+        }
+        let pass_rate = self.pass_count as f64 / self.count as f64;
+        let avg_score = self.mean;
+        (
+            Summary {
+                pass_rate: pass_rate as f32,
+                avg_score: avg_score as f32,
+            },
+            self.pass_count as usize,
+            self.fail_count as usize,
+        )
+    }
 }
 
 /// Sequential evaluation (deterministic)
 #[allow(dead_code)]
-pub fn run_sequential(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
+pub fn run_sequential(seed: u64, run_ids: &[u32], pass_threshold: f32) -> Vec<CaseResult> {
     run_ids
         .iter()
-        .map(|&id| evaluate_case(seed, id).result)
+        .map(|&id| evaluate_case(seed, id, pass_threshold).result)
         .collect()
 }
 
 /// Parallel evaluation (deterministic ordering by run_id)
 #[allow(dead_code)]
-pub fn run_parallel(seed: u64, run_ids: &[u32]) -> Vec<CaseResult> {
-    run_with_trace(seed, run_ids, true).results
+pub fn run_parallel(seed: u64, run_ids: &[u32], pass_threshold: f32) -> Vec<CaseResult> {
+    run_with_trace(seed, run_ids, pass_threshold, true).results
 }
 
 /// Run evaluation with a canonical trace and entropy accounting.
-pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
+pub fn run_with_trace(
+    seed: u64,
+    run_ids: &[u32],
+    pass_threshold: f32,
+    parallel: bool,
+) -> RunOutput {
     let n = run_ids.len();
     let mut runs: Vec<Option<CaseRun>> = (0..n).map(|_| None).collect();
 
     if parallel {
         runs.par_iter_mut().enumerate().for_each(|(i, slot)| {
             let run_id = run_ids[i];
-            *slot = Some(evaluate_case(seed, run_id));
+            *slot = Some(evaluate_case(seed, run_id, pass_threshold));
         });
     } else {
         for (i, run_id) in run_ids.iter().copied().enumerate() {
-            runs[i] = Some(evaluate_case(seed, run_id));
+            runs[i] = Some(evaluate_case(seed, run_id, pass_threshold));
         }
     }
 
@@ -71,7 +123,7 @@ pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
 }
 
 /// Evaluate one deterministic case
-fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
+pub(crate) fn evaluate_case(seed: u64, run_id: u32, pass_threshold: f32) -> CaseRun {
     let digest = hash_seed(seed, run_id);
     let case_id = to_hex(&digest);
 
@@ -83,7 +135,7 @@ fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
     let rng_calls = 1;
 
     let score = (base * (1.0 - difficulty)).clamp(0.0, 1.0);
-    let passed = score >= 0.5;
+    let passed = score >= pass_threshold;
 
     let thoughts = vec![
         ThoughtEvent {
