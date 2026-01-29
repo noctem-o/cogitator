@@ -32,6 +32,7 @@ jobs:
         run: cargo run -- verify --witness demo_out/drift/baseline_faults
 
   gauntlet-witness:
+    name: Gauntlet Witness Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,8 +41,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust cache
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Check gauntlet witness root
+      - name: Run gauntlet witness gate
         run: bash ./scripts/check_gauntlet_root.sh
+
+      - name: Upload gauntlet witness artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-witness-out_ci
+          path: out_ci/run_0000
