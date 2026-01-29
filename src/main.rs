@@ -25,6 +25,13 @@ mod witness;
 #[cfg(feature = "tui")]
 mod tui;
 
+fn rel_artifact_path(out_dir: &Path, path: &Path) -> String {
+    path.strip_prefix(out_dir)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// CLI entrypoint
 #[derive(Parser, Debug)]
 #[command(
@@ -270,16 +277,16 @@ fn run(args: RunArgs) -> Result<()> {
     canonical_json::write_json(&summary_json_path, &summary, "summary.json")?;
 
     let manifest = model::ArtifactManifest {
-        meta_json: meta_path.display().to_string(),
-        trace_jsonl: trace_path.display().to_string(),
-        results_csv: csv_path.display().to_string(),
-        results_json: results_json_path.display().to_string(),
-        summary_json: summary_json_path.display().to_string(),
-        witness_root_txt: witness_path.display().to_string(),
-        analysis_json: args.out_dir.join("analysis.json").display().to_string(),
+        meta_json: rel_artifact_path(&args.out_dir, &meta_path),
+        trace_jsonl: rel_artifact_path(&args.out_dir, &trace_path),
+        results_csv: rel_artifact_path(&args.out_dir, &csv_path),
+        results_json: rel_artifact_path(&args.out_dir, &results_json_path),
+        summary_json: rel_artifact_path(&args.out_dir, &summary_json_path),
+        witness_root_txt: rel_artifact_path(&args.out_dir, &witness_path),
+        analysis_json: rel_artifact_path(&args.out_dir, &args.out_dir.join("analysis.json")),
         nix_provenance_json: nix_provenance_path
             .as_ref()
-            .map(|path| path.display().to_string()),
+            .map(|path| rel_artifact_path(&args.out_dir, path)),
         agent_trace_json: None,
         tool_transcript_json: None,
         witness_manifest_json: None,

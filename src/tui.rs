@@ -47,7 +47,7 @@ pub fn launch(
 
     loop {
         terminal.draw(|frame| {
-            let size = frame.size();
+            let size = frame.area();
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
@@ -202,7 +202,7 @@ pub fn launch_agent(
 
     loop {
         terminal.draw(|frame| {
-            let size = frame.size();
+            let size = frame.area();
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
