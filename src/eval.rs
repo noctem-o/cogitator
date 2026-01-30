@@ -77,29 +77,29 @@ pub fn run_with_trace(seed: u64, run_ids: &[u32], parallel: bool) -> RunOutput {
 fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
     let digest = hash_seed(seed, run_id);
     let case_id = crate::hex::encode(&digest);
-    
+
     // Use fixed-point arithmetic (parts-per-million) for deterministic scores
     // difficulty_ppm: 0 to 1_000_000 representing 0.0 to 1.0
     let difficulty_ppm = (digest[0] as u32 * 1_000_000) / 255;
-    
+
     let rng_seed = u64::from_le_bytes(digest[..8].try_into().unwrap());
     let mut rng = StdRng::seed_from_u64(rng_seed);
-    
+
     // Generate base in range [450_000, 1_000_000] parts-per-million (0.45 to 1.0)
     let base_ppm = 450_000 + rng.gen_range(0..550_001);
     let rng_calls = 1;
-    
+
     // Compute score = base * (1.0 - difficulty) using fixed-point
     // score_ppm = base_ppm * (1_000_000 - difficulty_ppm) / 1_000_000
     let score_ppm = (base_ppm as u64 * (1_000_000 - difficulty_ppm) as u64) / 1_000_000;
     let score_ppm = score_ppm.min(1_000_000) as u32;
-    
+
     let passed = score_ppm >= 500_000; // threshold: 0.5
-    
+
     // Convert to f32 only for display (CSV output) - not part of witness commitment
     let difficulty = difficulty_ppm as f32 / 1_000_000.0;
     let score = score_ppm as f32 / 1_000_000.0;
-    
+
     let thoughts = vec![
         ThoughtEvent {
             step: 0,
@@ -127,7 +127,7 @@ fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
             rng_calls: 0,
         },
     ];
-    
+
     let events = thoughts
         .iter()
         .map(|thought| TraceEvent {
@@ -141,7 +141,7 @@ fn evaluate_case(seed: u64, run_id: u32) -> CaseRun {
             rng_calls: thought.rng_calls,
         })
         .collect();
-    
+
     CaseRun {
         result: CaseResult {
             run_id,
@@ -240,7 +240,7 @@ mod tests {
             (250_000, 0.25),
             (750_000, 0.75),
         ];
-        
+
         for (ppm, expected_float) in test_cases {
             let computed = ppm as f32 / 1_000_000.0;
             assert!((computed - expected_float).abs() < 1e-6);
@@ -251,10 +251,10 @@ mod tests {
     fn test_deterministic_case_evaluation() {
         let seed = 42u64;
         let run_id = 0u32;
-        
+
         let case1 = evaluate_case(seed, run_id);
         let case2 = evaluate_case(seed, run_id);
-        
+
         assert_eq!(case1.result.case_id, case2.result.case_id);
         assert_eq!(case1.result.passed, case2.result.passed);
         assert_eq!(case1.result.score.to_bits(), case2.result.score.to_bits());

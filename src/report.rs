@@ -10,42 +10,42 @@ pub enum DriftIssue {
         expected: u32,
         actual: u32,
     },
-    
+
     /// Tool call index mismatch within a step
     ToolCallIndexMismatch {
         index: u32,
         expected: u32,
         actual: u32,
     },
-    
+
     /// Tool request (name or arguments) mismatch
     ToolRequestMismatch {
         index: u32,
     },
-    
+
     /// Tool outcome (response) mismatch
     ToolOutcomeMismatch {
         index: u32,
     },
-    
+
     /// Number of tool calls differs
     ToolCallCountMismatch {
         expected: u32,
         actual: u32,
     },
-    
+
     /// Unexpected tool request during replay
     UnexpectedToolRequest {
         index: u32,
     },
-    
+
     /// Ordeal-specific output mismatch (for ordeal.rs tests)
     OrdealOutputMismatch {
         step: u32,
         tool_name: String,
         tool_call_idx: u32,
         json_pointer: String,
-        label: String, 
+        label: String,
         issue_kind: String,
         expected: String,
         actual: String,

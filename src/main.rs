@@ -1,4 +1,12 @@
+use anyhow::{Context, Result};
+use clap::builder::ArgPredicate;
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use sha2::{Digest, Sha256};
 
+use std::fs::{self, File};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn rel_artifact_path(out_dir: &Path, path: &Path) -> String {
     path.strip_prefix(out_dir)
@@ -7,25 +15,12 @@ fn rel_artifact_path(out_dir: &Path, path: &Path) -> String {
         .into_owned()
 }
 
-use anyhow::{Context, Result};
-use clap::builder::ArgPredicate;
-use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use sha2::{Digest, Sha256};
-
-// NOTE: Remove this if it's unused and your CI runs clippy -D warnings
-// use crate::agent::Agent;
-
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
 mod agent;
 mod canonical_json;
 mod chaos;
 mod drift;
 mod eval;
-mod hex; 
+mod hex;
 mod io_utils;
 mod llm;
 mod model;
@@ -35,7 +30,6 @@ mod report;
 mod tooling;
 mod trace;
 mod verify;
-mod hex;
 mod witness;
 
 #[cfg(feature = "tui")]

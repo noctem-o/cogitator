@@ -39,13 +39,13 @@ impl Witness {
         let mut hasher = Hasher::new();
         hasher.update(b"COGITATOR/WITNESS/V1/STEP");
         hasher.update(&self.hash);
-        
+
         // Domain-separated length-prefix encoding to prevent preimage collisions
         hasher.update(b"|LENGTH|");
         hasher.update(&(event_bytes.len() as u64).to_be_bytes());
         hasher.update(b"|CONTENT|");
         hasher.update(event_bytes);
-        
+
         self.hash = *hasher.finalize().as_bytes();
         Ok(())
     }
