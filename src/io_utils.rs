@@ -18,23 +18,39 @@ where
         .with_context(|| format!("failed to locate file name for {}", label))?
         .to_string_lossy()
         .to_string();
+
     let mut attempts = 0;
     loop {
         let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         let tmp_path = dir.join(temp_name(&file_name, counter));
+
         match OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&tmp_path)
         {
             Ok(mut file) => {
-                write_fn(&mut file)?;
+                // If writing fails, best-effort cleanup of the temp file.
+                if let Err(err) = write_fn(&mut file) {
+                    let _ = fs::remove_file(&tmp_path);
+                    return Err(err);
+                }
+
+                // Ensure user-space buffers are flushed before syncing.
+                file.flush()
+                    .with_context(|| format!("failed to flush {}", label))?;
+
                 file.sync_all()
                     .with_context(|| format!("failed to sync {}", label))?;
                 drop(file);
-                fs::rename(&tmp_path, path)
-                    .with_context(|| format!("failed to rename {}", label))?;
+
+                // Windows rename doesn't overwrite; on Unix it does. Handle both.
+                replace_file(&tmp_path, path)
+                    .with_context(|| format!("failed to replace {}", label))?;
+
+                // Directory fsync is best-effort and Unix-only.
                 sync_dir(dir)?;
+
                 return Ok(());
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -68,10 +84,36 @@ fn temp_name(base: &str, counter: usize) -> PathBuf {
     PathBuf::from(format!(".{}.tmp.{}", base, counter))
 }
 
+/// Replace the destination file with the temporary file.
+///
+/// - On Unix, `rename` overwrites atomically.
+/// - On Windows, `rename` fails if the destination exists, so we remove it first.
+///   (Not perfectly atomic, but it's the standard portability compromise.)
+fn replace_file(tmp_path: &Path, dst_path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        if dst_path.exists() {
+            // Best-effort; if it fails we'll surface the later rename error anyway.
+            let _ = fs::remove_file(dst_path);
+        }
+        fs::rename(tmp_path, dst_path)
+    }
+
+    #[cfg(not(windows))]
+    {
+        fs::rename(tmp_path, dst_path)
+    }
+}
+
+/// Best-effort directory fsync for crash-safety.
+/// On Windows, opening/syncing directories is not generally supported via std APIs.
 fn sync_dir(dir: &Path) -> Result<()> {
-    let dir_file = File::open(dir).with_context(|| "failed to open output dir")?;
-    dir_file
-        .sync_all()
-        .with_context(|| "failed to sync output dir")?;
+    #[cfg(unix)]
+    {
+        let dir_file = File::open(dir).with_context(|| "failed to open output dir")?;
+        dir_file
+            .sync_all()
+            .with_context(|| "failed to sync output dir")?;
+    }
     Ok(())
 }
