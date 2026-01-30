@@ -27,10 +27,6 @@ pub fn encode(bytes: &[u8]) -> String {
     out
 }
 
-#[inline]
-pub fn hex_lower(bytes: &[u8]) -> String {
-    encode(bytes)
-}
 
 /// Efficiently encode bytes as lowercase hexadecimal string (alias for compatibility)
 ///
