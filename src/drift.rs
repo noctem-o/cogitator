@@ -187,4 +187,84 @@ pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
         let report = VerifyReport {
             schema_version: VERIFY_REPORT_SCHEMA_VERSION,
             verified: false,
-            issues: vec!["witness_man_]()
+            issues: vec!["witness_manifest.json not found".to_string()],
+            bundle_hash_expected: String::new(),
+            bundle_hash_actual: String::new(),
+        };
+        let report_path = witness_dir.join("verify_report.json");
+        let _ = canonical_json::write_json(&report_path, &report, "verify_report.json");
+        return Ok(report);
+    }
+
+    let manifest_file =
+        std::fs::File::open(&manifest_path).context("failed to open witness_manifest.json")?;
+    let manifest: crate::model::WitnessManifest =
+        serde_json::from_reader(manifest_file).context("failed to parse witness_manifest.json")?;
+
+    let mut issues: Vec<String> = Vec::new();
+
+    // Compute actual hashes for exactly the keys the manifest claims.
+    let mut actual_hashes: BTreeMap<String, String> = BTreeMap::new();
+
+    for (name, expected_hash) in manifest.artifact_hashes.iter() {
+        // Map known keys to their manifest path fields (for backwards compatibility).
+        let raw_hint = match name.as_str() {
+            "meta.json" => Some(manifest.meta_json.as_str()),
+            "agent_trace.json" => Some(manifest.agent_trace_json.as_str()),
+            "tool_transcript.json" => Some(manifest.tool_transcript_json.as_str()),
+            "drift_report.json" => Some(manifest.drift_report_json.as_str()),
+            "hash_chain.txt" => Some(manifest.hash_chain_txt.as_str()),
+            "chaos_profile.json" => manifest.chaos_profile_json.as_deref(),
+            "witness_root.txt" => manifest.witness_root_txt.as_deref(),
+            "nix_provenance.json" => manifest.nix_provenance_json.as_deref(),
+            _ => None,
+        };
+
+        let path = if let Some(raw) = raw_hint {
+            resolve_manifest_artifact_path(witness_dir, raw, name)
+        } else {
+            witness_dir.join(name)
+        };
+
+        if !path.exists() {
+            issues.push(format!("{} missing (looked for {})", name, path.display()));
+            continue;
+        }
+
+        let content = std::fs::read(&path).with_context(|| format!("failed to read {}", name))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&content);
+        let actual = crate::hex::encode(&hasher.finalize());
+
+        if &actual != expected_hash {
+            issues.push(format!(
+                "{} hash mismatch: expected {}, computed {}",
+                name, expected_hash, actual
+            ));
+        }
+
+        actual_hashes.insert(name.clone(), actual);
+    }
+
+    // Verify bundle hash.
+    let computed_bundle = bundle_hash(&actual_hashes)?;
+    if computed_bundle != manifest.bundle_hash {
+        issues.push(format!(
+            "bundle hash mismatch: expected {}, computed {}",
+            manifest.bundle_hash, computed_bundle
+        ));
+    }
+
+    let report = VerifyReport {
+        schema_version: VERIFY_REPORT_SCHEMA_VERSION,
+        verified: issues.is_empty(),
+        issues,
+        bundle_hash_expected: manifest.bundle_hash.clone(),
+        bundle_hash_actual: computed_bundle,
+    };
+
+    let report_path = witness_dir.join("verify_report.json");
+    canonical_json::write_json(&report_path, &report, "verify_report.json")?;
+
+    Ok(report)
+}
