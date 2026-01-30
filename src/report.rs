@@ -43,7 +43,9 @@ pub enum DriftIssue {
     OrdealOutputMismatch {
         step: u32,
         tool_name: String,
+        tool_call_idx: u32,
         json_pointer: String,
+        label: String, 
         issue_kind: String,
         expected: String,
         actual: String,
