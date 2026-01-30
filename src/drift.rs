@@ -1,146 +1,182 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs::File;
 use std::path::Path;
 
+use crate::agent::AgentTraceEntry;
 use crate::canonical_json;
+use crate::model::{RunMetadata, WitnessedMetadata};
 use crate::report::DriftIssue;
-use crate::tooling::ToolTranscriptRecord;
+use crate::tooling::{ToolCall, ToolTranscriptRecord};
 
-pub const DRIFT_REPORT_SCHEMA_VERSION: u32 = 1;
+pub const DRIFT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DriftReport {
     pub schema_version: u32,
-    pub baseline_hash: String,
-    pub candidate_hash: String,
+    pub drifted: bool,
     pub issues: Vec<DriftIssue>,
 }
 
-impl DriftReport {
-    pub fn new(baseline_hash: String, candidate_hash: String, issues: Vec<DriftIssue>) -> Self {
-        Self {
-            schema_version: DRIFT_REPORT_SCHEMA_VERSION,
-            baseline_hash,
-            candidate_hash,
-            issues,
+/// Compare two tool transcripts and detect drift
+pub fn detect_transcript_drift(
+    expected: ToolTranscriptRecord,
+    actual: &ToolTranscriptRecord,
+) -> DriftReport {
+    let mut issues = Vec::new();
+
+    if expected.entries.len() != actual.entries.len() {
+        issues.push(DriftIssue::ToolCallCountMismatch {
+            expected: expected.entries.len() as u32,
+            actual: actual.entries.len() as u32,
+        });
+    }
+
+    for (index, (exp, act)) in expected.entries.iter().zip(&actual.entries).enumerate() {
+        if exp.step != act.step {
+            issues.push(DriftIssue::ToolStepMismatch {
+                index: index as u32,
+                expected: exp.step,
+                actual: act.step,
+            });
+        }
+
+        if exp.tool_call_idx != act.tool_call_idx {
+            issues.push(DriftIssue::ToolCallIndexMismatch {
+                index: index as u32,
+                expected: exp.tool_call_idx,
+                actual: act.tool_call_idx,
+            });
+        }
+
+        if exp.tool_name != act.tool_name || exp.request != act.request {
+            issues.push(DriftIssue::ToolRequestMismatch {
+                index: index as u32,
+            });
+        }
+
+        if exp.outcome != act.outcome {
+            issues.push(DriftIssue::ToolOutcomeMismatch {
+                index: index as u32,
+            });
         }
     }
 
-    pub fn has_drift(&self) -> bool {
-        !self.issues.is_empty()
+    DriftReport {
+        schema_version: DRIFT_SCHEMA_VERSION,
+        drifted: !issues.is_empty(),
+        issues,
     }
 }
 
-pub fn compare_transcripts(
-    baseline: &ToolTranscriptRecord,
-    candidate: &ToolTranscriptRecord,
-) -> Result<DriftReport> {
-    let baseline_hash = transcript_hash(baseline)?;
-    let candidate_hash = transcript_hash(candidate)?;
+/// Build hash chain from agent trace and tool calls
+pub fn build_hash_chain(
+    agent_trace: &[AgentTraceEntry],
+    tool_calls: &[ToolCall],
+) -> Result<Vec<String>> {
+    let mut chain = Vec::new();
+    let mut hasher = Sha256::new();
+
+    for entry in agent_trace {
+        let entry_bytes = canonical_json::to_vec(&entry)?;
+        hasher.update(&entry_bytes);
+        chain.push(crate::hex::encode(&hasher.finalize_reset()));
+    }
+
+    for call in tool_calls {
+        let call_bytes = crate::trace::encode_tool_call(call)?;
+        hasher.update(&call_bytes);
+        chain.push(crate::hex::encode(&hasher.finalize_reset()));
+    }
+
+    Ok(chain)
+}
+
+/// Compute artifact hashes for witness bundle
+pub fn artifact_hashes(paths: &[&Path]) -> Result<Vec<String>> {
+    let mut hashes = Vec::new();
+
+    for path in paths {
+        let content = std::fs::read(path)
+            .with_context(|| format!("failed to read artifact: {}", path.display()))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&content);
+        hashes.push(crate::hex::encode(&hasher.finalize()));
+    }
+
+    Ok(hashes)
+}
+
+/// Compute bundle hash from artifact hashes
+pub fn bundle_hash(artifact_hashes: &[String]) -> Result<String> {
+    let mut hasher = Sha256::new();
+    for hash in artifact_hashes {
+        hasher.update(hash.as_bytes());
+    }
+    Ok(crate::hex::encode(&hasher.finalize()))
+}
+
+#[derive(Debug)]
+pub struct VerifyReport {
+    pub verified: bool,
+    pub issues: Vec<String>,
+}
+
+/// Verify witness bundle integrity
+pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
+    let manifest_path = witness_dir.join("witness_manifest.json");
+    
+    if !manifest_path.exists() {
+        return Ok(VerifyReport {
+            verified: false,
+            issues: vec!["witness_manifest.json not found".to_string()],
+        });
+    }
+
+    let manifest_file = std::fs::File::open(&manifest_path)
+        .context("failed to open witness_manifest.json")?;
+    let manifest: crate::model::WitnessManifest =
+        serde_json::from_reader(manifest_file).context("failed to parse witness_manifest.json")?;
 
     let mut issues = Vec::new();
 
-    // Note: Simplified comparison - just check if entries match exactly
-    // The actual DriftIssue variants available will depend on report.rs
-    if baseline.entries.len() != candidate.entries.len() {
-        // Length mismatch - but we don't have a variant for this
-        // Skip this check or we need to know the actual variant name
-    }
+    // Verify each artifact exists and hash matches
+    let artifacts = vec![
+        (&manifest.meta_json, "meta.json"),
+        (&manifest.agent_trace_json, "agent_trace.json"),
+        (&manifest.tool_transcript_json, "tool_transcript.json"),
+        (&manifest.drift_report_json, "drift_report.json"),
+        (&manifest.hash_chain_txt, "hash_chain.txt"),
+    ];
 
-    let min_len = baseline.entries.len().min(candidate.entries.len());
-    for i in 0..min_len {
-        let b_call = &baseline.entries[i];
-        let c_call = &candidate.entries[i];
+    let mut computed_hashes = Vec::new();
 
-        if b_call.step != c_call.step {
-            issues.push(DriftIssue::ToolStepMismatch {
-                index: i as u32,
-                expected: b_call.step,
-                actual: c_call.step,
-            });
+    for (path_str, name) in artifacts {
+        let path = witness_dir.join(path_str);
+        if !path.exists() {
+            issues.push(format!("{} missing", name));
+            continue;
         }
 
-        if b_call.tool_call_idx != c_call.tool_call_idx {
-            issues.push(DriftIssue::ToolCallIndexMismatch {
-                index: i as u32,
-                expected: b_call.tool_call_idx,
-                actual: c_call.tool_call_idx,
-            });
-        }
-
-        if b_call.tool_name != c_call.tool_name || b_call.request != c_call.request {
-            issues.push(DriftIssue::ToolRequestMismatch { index: i as u32 });
-        }
-
-        // Skip response/fault comparison as we don't have correct variant names
+        let content = std::fs::read(&path)
+            .with_context(|| format!("failed to read {}", name))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&content);
+        computed_hashes.push(crate::hex::encode(&hasher.finalize()));
     }
 
-    Ok(DriftReport::new(baseline_hash, candidate_hash, issues))
-}
-
-pub fn write_drift_report(path: &Path, report: &DriftReport) -> Result<()> {
-    canonical_json::write_json(path, report, "drift report")?;
-    Ok(())
-}
-
-pub fn read_drift_report(path: &Path) -> Result<DriftReport> {
-    let file = File::open(path).with_context(|| "failed to open drift report")?;
-    let report: DriftReport =
-        serde_json::from_reader(file).with_context(|| "failed to parse drift report")?;
-    Ok(report)
-}
-
-fn transcript_hash(record: &ToolTranscriptRecord) -> Result<String> {
-    let bytes = canonical_json::to_vec(record).context("serialize transcript")?;
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    Ok(crate::hex::encode(&digest))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tooling::{ToolCall, ToolMode, ToolOutcome};
-
-    #[test]
-    fn test_transcript_hash_determinism() {
-        let record = ToolTranscriptRecord {
-            schema_version: 3,
-            mode: ToolMode::Live,
-            entries: vec![ToolCall {
-                step: 0,
-                tool_call_idx: 0,
-                tool_name: "test.tool".to_string(),
-                request: serde_json::json!({"key": "value"}),
-                outcome: ToolOutcome::Ok {
-                    output: serde_json::json!({"result": "ok"}),
-                    simulated_latency_ms: None,
-                },
-                fault: None,
-            }],
-        };
-
-        let hash1 = transcript_hash(&record).unwrap();
-        let hash2 = transcript_hash(&record).unwrap();
-
-        assert_eq!(hash1, hash2);
-        assert_eq!(hash1.len(), 64); // SHA256 hex = 64 chars
+    // Verify bundle hash
+    let computed_bundle = bundle_hash(&computed_hashes)?;
+    if computed_bundle != manifest.bundle_hash {
+        issues.push(format!(
+            "bundle hash mismatch: expected {}, computed {}",
+            manifest.bundle_hash, computed_bundle
+        ));
     }
 
-    #[test]
-    fn test_compare_identical_transcripts() {
-        let record = ToolTranscriptRecord {
-            schema_version: 3,
-            mode: ToolMode::Live,
-            entries: vec![],
-        };
-
-        let report = compare_transcripts(&record, &record).unwrap();
-        assert!(!report.has_drift());
-        assert_eq!(report.baseline_hash, report.candidate_hash);
-    }
+    Ok(VerifyReport {
+        verified: issues.is_empty(),
+        issues,
+    })
 }
