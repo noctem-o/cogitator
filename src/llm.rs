@@ -73,45 +73,4 @@ impl LlmBackend for StubLlmBackend {
     }
 }
 
-pub fn make_tool_request(req: &LlmRequest) -> Result<ToolRequest> {
-    let arguments = canonical_json::to_value(req).context("llm request to value")?;
-    Ok(ToolRequest {
-        tool_name: LlmRequest::tool_name().to_string(),
-        arguments,
-    })
-}
-
-pub fn parse_tool_request(request: &ToolRequest) -> Result<LlmRequest> {
-    if request.tool_name != LlmRequest::tool_name() {
-        bail!("unexpected llm tool name: {}", request.tool_name);
-    }
-
-    let parsed: LlmRequest =
-        serde_json::from_value(request.arguments.clone()).context("parse llm request")?;
-
-    if parsed.schema_version != LLM_REQUEST_SCHEMA_VERSION {
-        bail!("unsupported llm request schema: {}", parsed.schema_version);
-    }
-
-    Ok(parsed)
-}
-
-#[allow(dead_code)]
-pub fn parse_tool_response(response: &ToolResponse) -> Result<LlmResponse> {
-    if response.tool_name != LlmRequest::tool_name() {
-        bail!("unexpected llm tool name: {}", response.tool_name);
-    }
-
-    let parsed: LlmResponse =
-        serde_json::from_value(response.output.clone()).context("parse llm response")?;
-
-    if parsed.schema_version != LLM_RESPONSE_SCHEMA_VERSION {
-        bail!("unsupported llm response schema: {}", parsed.schema_version);
-    }
-
-    Ok(parsed)
-}
-
-pub fn response_to_tool_output(response: &LlmResponse) -> Result<serde_json::Value> {
-    canonical_json::to_value(response).context("llm response to value")
-}
+pub fn make_tool_request(req: &LlmRequest) -> Result<ToolR
