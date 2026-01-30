@@ -401,7 +401,7 @@ fn stub_response(request: &ToolRequest) -> ToolResponse {
         hasher.update(bytes);
     }
     let digest = hasher.finalize();
-    let hash = hex_string(&digest);
+    let hash = crate::hex::enconde(&digest);
     ToolResponse {
         tool_name: request.tool_name.clone(),
         output: serde_json::json!({
@@ -413,13 +413,6 @@ fn stub_response(request: &ToolRequest) -> ToolResponse {
     }
 }
 
-fn hex_string(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push_str(&format!("{:02x}", byte));
-    }
-    out
-}
 
 fn llm_live_response(request: &ToolRequest) -> Option<ToolResponse> {
     let parsed = llm::parse_tool_request(request).ok()?;
