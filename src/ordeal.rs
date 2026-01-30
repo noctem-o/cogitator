@@ -3,16 +3,40 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::agent::{AgentOutput, AgentTraceEntry};
 use crate::canonical_json;
 use crate::report::DriftIssue;
 use crate::tooling::{ToolRequest, ToolResponse, ToolTranscript};
 
+/// Relative path to the ordeal task specification (resolved at runtime).
 pub const ORDEAL_TASKS_PATH: &str = "tasks/ordeal.json";
+
+/// Legacy path retained for compatibility with older test suites.
 pub const LEGACY_GAUNTLET_TASKS_PATH: &str = "tasks/gauntlet.json";
+
+/// Fixed number of tasks executed by the ordeal.
 pub const ORDEAL_TASK_COUNT: usize = 50;
+
+/// Resolve a task JSON path robustly across Unix + Windows CI.
+///
+/// Strategy:
+/// 1. Try relative to current working directory
+/// 2. Try relative to the crate root (via CARGO_MANIFEST_DIR)
+fn resolve_task_path(rel: &str) -> Result<PathBuf> {
+    let cwd = PathBuf::from(rel);
+    if cwd.exists() {
+        return Ok(cwd);
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+    if manifest_dir.exists() {
+        return Ok(manifest_dir);
+    }
+
+    bail!("task file not found: {}", rel);
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
