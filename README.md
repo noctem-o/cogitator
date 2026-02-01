@@ -16,35 +16,22 @@ environment.
 ![Deterministic](https://img.shields.io/badge/Deterministic-Yes-4c1?style=flat-square)
 ![Witnessed](https://img.shields.io/badge/Witnessed-Yes-6a5acd?style=flat-square)
 
-Table of contents
+## Table of contents
 
-Why Cogitator
+- [Why Cogitator](#why-cogitator)
+- [Key capabilities](#key-capabilities)
+- [Quickstart](#quickstart)
+- [Install prerequisites](#install-prerequisites)
+- [Build and run](#build-and-run)
+- [CLI overview](#cli-overview)
+- [Artifacts and verification](#artifacts-and-verification)
+- [Commitment boundaries](#commitment-boundaries)
+- [Deterministic Simulation Testing (DST)](#deterministic-simulation-testing-dst)
+- [Verification workflow](#verification-workflow-no-makefile)
+- [Ordeal witness gate in CI](#ordeal-witness-gate-in-ci)
+- [Nix (optional)](#nix-optional)
+- [Project layout](#project-layout)
 
-Key capabilities
-
-Quickstart
-
-Install prerequisites
-
-Build and run
-
-CLI overview
-
-Artifacts and verification
-
-Commitment boundaries
-
-Deterministic Simulation Testing (DST)
-
-Verification workflow
-
-Ordeal witness gate in CI
-
-Nix (optional)
-
-Project layout
-
-Why Cogitator
 
 Auditable agent evaluations should be reproducible by anyone, not just the original operator.
 
