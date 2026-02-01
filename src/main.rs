@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::builder::ArgPredicate;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
+use crate::agent::Agent;
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};

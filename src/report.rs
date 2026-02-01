@@ -23,6 +23,30 @@ pub enum DriftIssue {
         index: u32,
     },
 
+        /// Tool transcript schema version differs
+    TranscriptSchemaMismatch {
+        expected: u32,
+        actual: u32,
+    },
+
+    /// Tool transcript mode differs (record vs replay, etc.)
+    TranscriptModeMismatch {
+        expected: String,
+        actual: String,
+    },
+
+    /// Tool transcript entry count differs
+    TranscriptLengthMismatch {
+        expected: u32,
+        actual: u32,
+    },
+
+    /// Tool fault injection differs for a given tool call
+    ToolFaultMismatch {
+        index: u32,
+    },
+
+
     /// Tool outcome (response) mismatch
     ToolOutcomeMismatch {
         index: u32,

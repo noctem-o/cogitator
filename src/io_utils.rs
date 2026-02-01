@@ -100,10 +100,10 @@ fn replace_file(tmp: &Path, dst: &Path) -> io::Result<()> {
 
 /// Best-effort directory fsync.
 /// On Windows, opening/syncing directories like files is not generally supported.
-fn sync_dir(dir: &Path) -> Result<()> {
+fn sync_dir(_dir: &Path) -> Result<()> {
     #[cfg(unix)]
     {
-        let dir_file = File::open(dir).with_context(|| "failed to open output dir")?;
+        let dir_file = File::open(_dir).with_context(|| "failed to open output dir")?;
         dir_file
             .sync_all()
             .with_context(|| "failed to sync output dir")?;

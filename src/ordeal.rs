@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::agent::{AgentOutput, AgentTraceEntry};
@@ -93,11 +94,112 @@ impl TaskSuite {
             path.to_path_buf()
         };
 
-        let file = File::open(&resolved)
+        let mut file = File::open(&resolved)
             .with_context(|| format!("failed to open ordeal tasks at {}", resolved.display()))?;
 
-        let tasks: Vec<TaskSpec> =
-            serde_json::from_reader(file).with_context(|| "failed to parse ordeal tasks")?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .with_context(|| format!("failed to read ordeal tasks at {}", resolved.display()))?;
+
+        if bytes.is_empty() {
+            bail!("ordeal tasks file is empty: {}", resolved.display());
+        }
+
+        // Strip UTF-8 BOM if present
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            bytes.drain(0..3);
+        }
+
+        // Helper for richer parse errors (prints first bytes)
+        let parse_json_bytes = |b: &[u8]| -> Result<Vec<TaskSpec>> {
+            let head = b.iter().take(16).map(|x| format!("{:02x}", x)).collect::<Vec<_>>().join(" ");
+            serde_json::from_slice(b).with_context(|| {
+                format!(
+                    "failed to parse ordeal tasks at {} (first bytes: {})",
+                    resolved.display(),
+                    head
+                )
+            })
+        };
+
+        let tasks: Vec<TaskSpec> = if bytes.starts_with(&[0xFF, 0xFE]) {
+            // UTF-16 LE with BOM
+            if (bytes.len() - 2) % 2 != 0 {
+                bail!(
+                    "ordeal tasks UTF-16LE has odd byte length: {}",
+                    resolved.display()
+                );
+            }
+            let u16s: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s).with_context(|| {
+                format!("failed to decode UTF-16LE ordeal tasks at {}", resolved.display())
+            })?;
+            serde_json::from_str(&s)
+                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+        } else if bytes.starts_with(&[0xFE, 0xFF]) {
+            // UTF-16 BE with BOM
+            if (bytes.len() - 2) % 2 != 0 {
+                bail!(
+                    "ordeal tasks UTF-16BE has odd byte length: {}",
+                    resolved.display()
+                );
+            }
+            let u16s: Vec<u16> = bytes[2..]
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s).with_context(|| {
+                format!("failed to decode UTF-16BE ordeal tasks at {}", resolved.display())
+            })?;
+            serde_json::from_str(&s)
+                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+        } else if bytes.len() >= 2 && bytes[0] == b'[' && bytes[1] == 0x00 {
+            // UTF-16 LE without BOM: '[' '\0' ...
+            if bytes.len() % 2 != 0 {
+                bail!(
+                    "ordeal tasks UTF-16LE(no BOM) has odd byte length: {}",
+                    resolved.display()
+                );
+            }
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s).with_context(|| {
+                format!(
+                    "failed to decode UTF-16LE(no BOM) ordeal tasks at {}",
+                    resolved.display()
+                )
+            })?;
+            serde_json::from_str(&s)
+                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+        } else if bytes.len() >= 2 && bytes[0] == 0x00 && bytes[1] == b'[' {
+            // UTF-16 BE without BOM: '\0' '[' ...
+            if bytes.len() % 2 != 0 {
+                bail!(
+                    "ordeal tasks UTF-16BE(no BOM) has odd byte length: {}",
+                    resolved.display()
+                );
+            }
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            let s = String::from_utf16(&u16s).with_context(|| {
+                format!(
+                    "failed to decode UTF-16BE(no BOM) ordeal tasks at {}",
+                    resolved.display()
+                )
+            })?;
+            serde_json::from_str(&s)
+                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+        } else {
+            // Assume UTF-8
+            parse_json_bytes(&bytes)?
+        };
 
         validate_tasks(&tasks)?;
         Ok(Self { tasks })
@@ -223,13 +325,9 @@ pub fn run_ordeal(
             } else {
                 let replayed = transcript.execute(step, request.clone());
                 if config.regress {
-                    ordeal_stub_response(
-                        config.seed,
-                        config.run_id,
-                        tool_call_idx,
-                        &request,
-                        true,
-                    )?
+                    // Intentional mismatch for demo/regression scenarios:
+                    // still advance transcript cursor, but evaluate expected against the regressed output.
+                    ordeal_stub_response(config.seed, config.run_id, tool_call_idx, &request, true)?
                 } else {
                     replayed
                 }

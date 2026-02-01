@@ -39,12 +39,18 @@ pub fn detect_transcript_drift(expected: &ToolTranscriptRecord, actual: &ToolTra
         });
     }
 
-    if expected.mode != actual.mode {
-        issues.push(DriftIssue::TranscriptModeMismatch {
-            expected: format!("{:?}", expected.mode),
-            actual: format!("{:?}", actual.mode),
-        });
-    }
+    let mode_is_compatible =
+    expected.mode == actual.mode
+    || (expected.mode == crate::tooling::ToolMode::Live && actual.mode == crate::tooling::ToolMode::Replay)
+    || (expected.mode == crate::tooling::ToolMode::Replay && actual.mode == crate::tooling::ToolMode::Live);
+
+if !mode_is_compatible {
+    issues.push(DriftIssue::TranscriptModeMismatch {
+        expected: format!("{:?}", expected.mode),
+        actual: format!("{:?}", actual.mode),
+    });
+}
+
 
     if expected.entries.len() != actual.entries.len() {
         issues.push(DriftIssue::TranscriptLengthMismatch {
