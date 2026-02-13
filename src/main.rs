@@ -41,7 +41,7 @@ mod tui;
 #[derive(Parser, Debug)]
 #[command(
     name = "cogitator",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("COGITATOR_GIT_SHA"), ")"),
     about = "Deterministic evaluation harness"
 )]
 pub struct Cli {
@@ -74,6 +74,24 @@ pub enum FaultProfile {
 pub enum LlmToggle {
     On,
     Off,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum TuiTheme {
+    Neon,
+    Cyan,
+    Mono,
+}
+
+#[cfg(feature = "tui")]
+impl TuiTheme {
+    fn as_str(&self) -> &'static str {
+        match self {
+            TuiTheme::Neon => "neon",
+            TuiTheme::Cyan => "cyan",
+            TuiTheme::Mono => "mono",
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -155,6 +173,12 @@ pub struct RunArgs {
 
     #[arg(long)]
     pub no_tui: bool,
+
+    #[arg(long, default_value = "neon", value_enum)]
+    pub theme: TuiTheme,
+
+    #[arg(long)]
+    pub no_color: bool,
 
     #[arg(
         long,
@@ -400,6 +424,8 @@ fn run(args: RunArgs) -> Result<()> {
     if tui_enabled {
         #[cfg(feature = "tui")]
         tui::launch(
+            args.theme.as_str(),
+            args.no_color,
             args.seed,
             run_ids.len() as u32,
             &output.results,
@@ -959,6 +985,8 @@ fn run_agent(args: RunArgs) -> Result<()> {
             if tui_enabled && single_run {
                 #[cfg(feature = "tui")]
                 tui::launch_agent(
+                    args.theme.as_str(),
+                    args.no_color,
                     &agent_name,
                     run_id,
                     args.seed,
@@ -1068,6 +1096,8 @@ fn ordeal_check_cmd(args: OrdealCheckArgs) -> Result<()> {
         out_dir: out_dir.clone(),
         clean: true,
         no_tui: true,
+        theme: TuiTheme::Neon,
+        no_color: false,
         parallel: false,
         created_at: None,
         agent: Some("ordeal".to_string()),
@@ -1343,6 +1373,8 @@ fn run_demo_agent(
             out_dir: PathBuf::new(),
             clean: false,
             no_tui: true,
+            theme: TuiTheme::Neon,
+            no_color: false,
             parallel: false,
             created_at: None,
             agent: Some("clawdbot".to_string()),

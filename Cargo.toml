@@ -2,6 +2,7 @@
 name = "cogitator"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 description = "Deterministic parallel evaluation harness with optional TUI inspection cockpit"
 license = "MIT"
 
@@ -26,3 +27,8 @@ crossterm = { version = "0.28", optional = true, features = ["event-stream"] }
 [dev-dependencies]
 proptest = "1.4"
 tempfile = "3.12"
+
+[package.metadata.dist]
+dist = true
+installers = ["shell", "powershell"]
+ci = ["github"]

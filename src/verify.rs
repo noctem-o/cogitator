@@ -217,6 +217,18 @@ fn detect_agent_witness_component_diff(
     }
     let trace_only = witness_trace_only.finalize_hex();
 
+    let mut witness_toolcalls_only = Witness::new(&metadata_bytes)?;
+    let mut ordered_steps: Vec<u32> = calls_by_step.keys().copied().collect();
+    ordered_steps.sort_unstable();
+    for step in ordered_steps {
+        if let Some(calls) = calls_by_step.get(&step) {
+            for call in calls {
+                witness_toolcalls_only.update(&encode_tool_call_witness(call)?)?;
+            }
+        }
+    }
+    let toolcalls_only = witness_toolcalls_only.finalize_hex();
+
     let mut witness_full = Witness::new(&metadata_bytes)?;
     for entry in agent_trace {
         witness_full.update(&encode_agent_trace_entry(entry)?)?;
@@ -228,8 +240,16 @@ fn detect_agent_witness_component_diff(
     }
     let full = witness_full.finalize_hex();
 
+    let first_hint = if metadata_only != trace_only {
+        "trace stream differs first"
+    } else if trace_only != toolcalls_only {
+        "tool-call witness stream differs first"
+    } else {
+        "combined semantic stream differs"
+    };
+
     Ok(Some(format!(
-        "semantic recompute mismatch; metadata_only={} trace_only={} full_semantic={} (full root is metadata+agent_trace+tool_calls)",
-        metadata_only, trace_only, full
+        "semantic recompute mismatch; metadata_only={} trace_only={} toolcalls_only={} full_semantic={} first_differing_component={}",
+        metadata_only, trace_only, toolcalls_only, full, first_hint
     )))
 }
