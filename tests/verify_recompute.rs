@@ -166,6 +166,13 @@ fn recompute_witness_root_detects_semantic_tamper() {
     let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
         .expect("recompute succeeds");
     assert!(!receipt.matched);
+    let diff = receipt
+        .differing_component
+        .expect("semantic mismatch should include component diagnostics");
+    assert!(diff.contains("metadata_only="), "diagnostic: {diff}");
+    assert!(diff.contains("trace_only="), "diagnostic: {diff}");
+    assert!(diff.contains("toolcalls_only="), "diagnostic: {diff}");
+    assert!(diff.contains("full_semantic="), "diagnostic: {diff}");
 }
 
 #[test]
