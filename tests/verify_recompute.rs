@@ -192,3 +192,19 @@ fn recompute_witness_root_ignores_provenance_only_mutation() {
         .expect("recompute succeeds");
     assert!(receipt.matched);
 }
+
+#[test]
+fn recompute_rejects_duplicate_manifest_keys() {
+    let temp = tempdir().expect("tempdir");
+    write_bundle(temp.path(), base_call()).expect("bundle");
+
+    let manifest_path = temp.path().join("witness_manifest.json");
+    std::fs::write(&manifest_path, r#"{"schema_version":1,"schema_version":1}"#)
+        .expect("write duplicate manifest");
+
+    let err = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
+        .expect_err("duplicate keys must be rejected");
+    assert!(err
+        .to_string()
+        .contains("duplicate JSON object member name"));
+}

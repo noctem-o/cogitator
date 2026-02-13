@@ -269,7 +269,7 @@ out/
 **Artifact highlights**
 
 - `meta.json` – run metadata (witnessed + provenance)
-- `trace.jsonl` – canonical trace events (NDJSON: one JSON object per line)
+- `trace.jsonl` – canonical trace events (NDJSON: one JSON object per line; strict JSON parser rejects duplicate keys and non-integer numbers)
 - `results.csv` / `results.json` – case-level results
 - `summary.json` – aggregate metrics
 - `analysis.json` – bundled metadata + summary + results
@@ -286,7 +286,7 @@ Notes:
 
 Cogitator draws a strict line between what is **witnessed** and what is **provenance**:
 
-- **Witness root** commits to canonical trace entries plus (in agent mode) agent trace entries and tool-call witness views in deterministic order.
+- **Witness root** commits to RFC 8785-style canonical JSON (JCS key ordering) over a strict I-JSON subset (integers only) for trace entries plus (in agent mode) agent trace entries and tool-call witness views in deterministic order.
   Simulated latency and runtime environment details are excluded.
   Tool-call commitments are computed from explicit witness-view types (not full transcript structs), so provenance-only fields cannot be accidentally pulled into witnessed bytes.
 - **Provenance metadata** captures run-time context (timestamps, toolchain versions, agent thread count, platform notes, optional Nix details) and is **not** part of the witness root.

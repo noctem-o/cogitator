@@ -58,13 +58,24 @@ pub fn launch(
                 ])
                 .split(size);
 
-            let title = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "Cogitator Run Summary",
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!("  •  Seed {}", seed)),
-            ]))
+            let title = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled(
+                        " ▸ COGITATOR",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "  deterministic attestation cockpit",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(" witness summary", Style::default().fg(Color::Green)),
+                    Span::raw(format!("  •  Seed {}", seed)),
+                ]),
+            ])
             .wrap(Wrap { trim: true });
             frame.render_widget(title, layout[0]);
 
@@ -161,7 +172,14 @@ pub fn launch(
             } else {
                 "View PR (disabled)"
             };
-            let view_button = Block::default().borders(Borders::ALL).title(view_pr_title);
+            let view_button = Block::default()
+                .borders(Borders::ALL)
+                .title(view_pr_title)
+                .border_style(if pr_url.is_some() {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                });
             frame.render_widget(view_button, button_layout[1]);
         })?;
 
@@ -227,9 +245,9 @@ pub fn launch_agent(
 
             let mut title_spans = vec![
                 Span::styled(
-                    "Cogitator Agent Observatory",
+                    "▸ COGITATOR // Agent Observatory",
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(format!("  •  Agent {}  •  Run {}", agent_name, run_id)),

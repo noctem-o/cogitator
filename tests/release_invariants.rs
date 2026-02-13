@@ -42,7 +42,7 @@ fn canonical_json_rejects_floats_in_release_and_debug() {
     let value = serde_json::json!({"value": 0.25});
     let err = canonical_json::to_vec(&value).expect_err("floats must be rejected");
     assert!(
-        err.to_string().contains("rejected floating-point number"),
+        err.to_string().contains("rejected non-integer number"),
         "unexpected error: {err}"
     );
 }

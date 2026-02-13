@@ -57,9 +57,7 @@ fn hint_for_line(trimmed: &str) -> Option<&'static str> {
 pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<String> {
     let expect = expect.trim();
 
-    let meta_file = File::open(meta_path).with_context(|| "failed to open meta.json")?;
-    let metadata: RunMetadata =
-        serde_json::from_reader(meta_file).with_context(|| "failed to parse meta.json")?;
+    let metadata: RunMetadata = crate::strict_json::from_path(meta_path, "meta.json")?;
 
     if metadata.witnessed.schema_version != TRACE_SCHEMA_VERSION {
         anyhow::bail!(
@@ -84,28 +82,29 @@ pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<Strin
             continue;
         }
 
-        let event: TraceEvent = match serde_json::from_str(trimmed) {
-            Ok(ev) => ev,
-            Err(e) => {
-                let pv = preview_80(trimmed);
-                if let Some(hint) = hint_for_line(trimmed) {
-                    anyhow::bail!(
-                        "failed to parse trace line {}: {}\n  preview: {}\n  hint: {}",
-                        line_idx + 1,
-                        e,
-                        pv,
-                        hint
-                    );
-                } else {
-                    anyhow::bail!(
-                        "failed to parse trace line {}: {}\n  preview: {}",
-                        line_idx + 1,
-                        e,
-                        pv
-                    );
+        let event: TraceEvent =
+            match crate::strict_json::from_slice(trimmed.as_bytes(), "trace.jsonl line") {
+                Ok(ev) => ev,
+                Err(e) => {
+                    let pv = preview_80(trimmed);
+                    if let Some(hint) = hint_for_line(trimmed) {
+                        anyhow::bail!(
+                            "failed to parse trace line {}: {}\n  preview: {}\n  hint: {}",
+                            line_idx + 1,
+                            e,
+                            pv,
+                            hint
+                        );
+                    } else {
+                        anyhow::bail!(
+                            "failed to parse trace line {}: {}\n  preview: {}",
+                            line_idx + 1,
+                            e,
+                            pv
+                        );
+                    }
                 }
-            }
-        };
+            };
 
         if event.schema_version != TRACE_SCHEMA_VERSION {
             anyhow::bail!(
@@ -152,32 +151,20 @@ pub fn recompute_agent_witness_root_from_bundle(
     expect_override: Option<&str>,
 ) -> Result<WitnessRootRecomputeReceipt> {
     let manifest_path = witness_dir.join("witness_manifest.json");
-    let manifest_file = File::open(&manifest_path)
-        .with_context(|| format!("failed to open {}", manifest_path.display()))?;
-    let manifest: WitnessManifest = serde_json::from_reader(manifest_file)
-        .with_context(|| "failed to parse witness_manifest.json")?;
+    let manifest: WitnessManifest =
+        crate::strict_json::from_path(&manifest_path, "witness_manifest.json")?;
 
     let meta_path = witness_dir.join(&manifest.meta_json);
     let trace_path = witness_dir.join(&manifest.agent_trace_json);
     let transcript_path = witness_dir.join(&manifest.tool_transcript_json);
 
-    let metadata: RunMetadata = serde_json::from_reader(
-        File::open(&meta_path)
-            .with_context(|| format!("failed to open {}", meta_path.display()))?,
-    )
-    .with_context(|| "failed to parse meta.json")?;
+    let metadata: RunMetadata = crate::strict_json::from_path(&meta_path, "meta.json")?;
 
-    let agent_trace: Vec<AgentTraceEntry> = serde_json::from_reader(
-        File::open(&trace_path)
-            .with_context(|| format!("failed to open {}", trace_path.display()))?,
-    )
-    .with_context(|| "failed to parse agent_trace.json")?;
+    let agent_trace: Vec<AgentTraceEntry> =
+        crate::strict_json::from_path(&trace_path, "agent_trace.json")?;
 
-    let transcript: ToolTranscriptRecord = serde_json::from_reader(
-        File::open(&transcript_path)
-            .with_context(|| format!("failed to open {}", transcript_path.display()))?,
-    )
-    .with_context(|| "failed to parse tool_transcript.json")?;
+    let transcript: ToolTranscriptRecord =
+        crate::strict_json::from_path(&transcript_path, "tool_transcript.json")?;
 
     let expected = if let Some(expect) = expect_override {
         expect.trim().to_string()
@@ -215,24 +202,34 @@ fn detect_agent_witness_component_diff(
     agent_trace: &[AgentTraceEntry],
     transcript: &ToolTranscriptRecord,
 ) -> Result<Option<String>> {
-    let mut witness = Witness::new(&encode_witnessed_metadata(witnessed)?)?;
+    let metadata_bytes = encode_witnessed_metadata(witnessed)?;
     let mut calls_by_step = index_tool_calls_by_step(&transcript.entries);
     for calls in calls_by_step.values_mut() {
         calls.sort_by_key(|call| call.tool_call_idx());
     }
 
+    let witness_metadata_only = Witness::new(&metadata_bytes)?;
+    let metadata_only = witness_metadata_only.finalize_hex();
+
+    let mut witness_trace_only = Witness::new(&metadata_bytes)?;
     for entry in agent_trace {
-        witness.update(&encode_agent_trace_entry(entry)?)?;
+        witness_trace_only.update(&encode_agent_trace_entry(entry)?)?;
+    }
+    let trace_only = witness_trace_only.finalize_hex();
+
+    let mut witness_full = Witness::new(&metadata_bytes)?;
+    for entry in agent_trace {
+        witness_full.update(&encode_agent_trace_entry(entry)?)?;
         if let Some(calls) = calls_by_step.get_mut(&entry.step) {
             for call in calls.iter() {
-                witness.update(&encode_tool_call_witness(call)?)?;
+                witness_full.update(&encode_tool_call_witness(call)?)?;
             }
         }
     }
+    let full = witness_full.finalize_hex();
 
-    // Bundle is self-consistent if we got here; mismatch is against an external expected root.
-    Ok(Some(
-        "expected root differs from recomputed semantic witness path (metadata/agent_trace/tool_calls)"
-            .to_string(),
-    ))
+    Ok(Some(format!(
+        "semantic recompute mismatch; metadata_only={} trace_only={} full_semantic={} (full root is metadata+agent_trace+tool_calls)",
+        metadata_only, trace_only, full
+    )))
 }

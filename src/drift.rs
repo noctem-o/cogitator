@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use crate::agent::AgentTraceEntry;
@@ -209,10 +208,8 @@ fn resolve_manifest_artifact_path(witness_dir: &Path, raw: &str) -> PathBuf {
 /// Writes `verify_report.json` into the witness directory.
 pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
     let manifest_path = witness_dir.join("witness_manifest.json");
-    let file = File::open(&manifest_path)
-        .with_context(|| format!("failed to open {}", manifest_path.display()))?;
     let manifest: WitnessManifest =
-        serde_json::from_reader(file).with_context(|| "failed to parse witness_manifest.json")?;
+        crate::strict_json::from_path(&manifest_path, "witness_manifest.json")?;
 
     let mut artifact_paths: Vec<PathBuf> = vec![
         resolve_manifest_artifact_path(witness_dir, &manifest.meta_json),

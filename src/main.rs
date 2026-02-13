@@ -28,6 +28,7 @@ mod model;
 mod nix_provenance;
 mod ordeal;
 mod report;
+mod strict_json;
 mod tooling;
 mod trace;
 mod verify;

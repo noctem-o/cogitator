@@ -11,6 +11,7 @@ pub mod model;
 pub mod nix_provenance;
 pub mod ordeal;
 pub mod report;
+pub mod strict_json;
 pub mod tooling;
 pub mod trace;
 pub mod verify;
