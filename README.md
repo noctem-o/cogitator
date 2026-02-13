@@ -402,8 +402,10 @@ Cogitator is set up for release automation with:
 - `git-cliff` configuration in `cliff.toml` for changelog generation from commit history.
 - `--version` / `--help` including git SHA metadata when available at build time, with a deterministic `unknown` fallback when `git` metadata is unavailable.
 - CI gates for format, clippy, tests, determinism smoke checks, verify-recompute checks, release dry-runs (`cargo dist build --artifacts=global`), and a true no-git build gate (no `.git/` and no `git` on `PATH`) to keep release builds robust outside a git checkout.
-- A RustSec advisory check via `rustsec/audit-check` (configured by `audit.toml`) as a fail-closed release trust gate. CI pins GitHub Actions by commit SHA (tags are not used for enforcement). `scripts/resolve_audit_check_sha.sh` is a maintainer-only helper for rotating the `rustsec/audit-check` SHA pin (`./scripts/resolve_audit_check_sha.sh`). Temporary suppressions must be documented inline in `audit.toml` with a ticket reference.
-- GitHub Artifact Attestations (`actions/attest-build-provenance`) for release artifacts produced by `cargo-dist`.
+- A RustSec advisory check via `rustsec/audit-check` (configured by `audit.toml`) as a fail-closed release trust gate.
+- Enforced immutable GitHub Action pinning in CI via `scripts/check_action_pins.sh` (wired as an early `action-pin-policy` job). For protected actions (`actions/checkout`, `actions/upload-artifact`, `actions/attest-build-provenance`, `rustsec/audit-check`), version tags are rejected and only full 40-hex commit SHAs are allowed.
+- Maintainer-only pin refresh utility: `scripts/resolve_action_sha.sh <org/repo> <tag>` (for example: `./scripts/resolve_action_sha.sh rustsec/audit-check v2.0.0`). Resolve tags in a PR and commit the resulting SHA pin; never resolve tags dynamically at CI runtime.
+- GitHub Artifact Attestations (`actions/attest-build-provenance`) for release artifacts produced by `cargo-dist`. `actions/upload-artifact` v6 and `actions/attest-build-provenance` v3 run on Node.js 24, which is supported on current GitHub-hosted runners (`ubuntu-latest`/`macos-latest`) used by this repo.
 - Release workflow permissions are least-privilege: `contents: write` (required for GitHub Release publishing), `id-token: write` (OIDC), and `attestations: write` (artifact attestations).
 
 ## Nix (optional)

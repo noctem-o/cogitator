@@ -11,14 +11,24 @@ on:
   pull_request:
 
 jobs:
+  action-pin-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Enforce SHA-pinned workflow actions
+        run: scripts/check_action_pins.sh
+
   test:
+    needs: action-pin-policy
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Rust
         run: |
@@ -50,10 +60,11 @@ jobs:
           diff -u smoke_a/witness_root.txt smoke_b/witness_root.txt
 
   release-dry-run:
+    needs: action-pin-policy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Rust
         run: |
@@ -80,13 +91,14 @@ jobs:
           test -n "$(find dist -maxdepth 1 -type f | head -n 1)"
 
   no-git-build:
+    needs: action-pin-policy
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Rust
         run: |
@@ -122,13 +134,14 @@ jobs:
           grep -Eq '^cogitator [0-9]+\.[0-9]+\.[0-9]+ \(([0-9a-f]{7,40}|unknown)\)$' version.txt
 
   ordeal-witness:
+    needs: action-pin-policy
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Rust
         run: |
@@ -140,7 +153,7 @@ jobs:
 
       - name: Upload ordeal witness artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ordeal-witness-artifacts
           path: |
@@ -149,10 +162,11 @@ jobs:
 
 
   security-audit:
+    needs: action-pin-policy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: RustSec advisory audit
-        uses: rustsec/audit-check@v2
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
