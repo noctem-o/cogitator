@@ -492,3 +492,116 @@ fn agent_witness_root_invariant_across_thread_counts() {
 
     assert!(roots.iter().all(|root| root == &roots[0]));
 }
+
+#[test]
+fn witness_root_ignores_simulated_latency() {
+    let metadata = WitnessedMetadata {
+        schema_version: TRACE_SCHEMA_VERSION,
+        seed: 1,
+        requested_runs: 1,
+        executed_runs: 1,
+        parallel: false,
+        parallel_strategy: "sequential".to_string(),
+        case_filter: Some(0),
+        entropy_sources: vec![],
+        total_rng_calls: 0,
+        chaos_profile: None,
+        pass_threshold: None,
+    };
+
+    let agent_trace = vec![AgentTraceEntry {
+        step: 0,
+        role: "assistant".to_string(),
+        thought: "x".to_string(),
+        action: "y".to_string(),
+        tool_requests: vec![],
+        is_final: true,
+    }];
+
+    let call_with_latency = ToolCall {
+        step: 0,
+        tool_call_idx: 0,
+        tool_name: "clawdbot.lookup".to_string(),
+        request: serde_json::json!({"k": "v"}),
+        outcome: ToolOutcome::Ok {
+            output: serde_json::json!({"result": 1}),
+            simulated_latency_ms: Some(123),
+        },
+        fault: None,
+    };
+
+    let call_without_latency = ToolCall {
+        outcome: ToolOutcome::Ok {
+            output: serde_json::json!({"result": 1}),
+            simulated_latency_ms: None,
+        },
+        ..call_with_latency.clone()
+    };
+
+    let root_a = witness_root_for_agent(&metadata, &agent_trace, &[call_with_latency]);
+    let root_b = witness_root_for_agent(&metadata, &agent_trace, &[call_without_latency]);
+    assert_eq!(root_a, root_b);
+}
+
+#[test]
+fn witness_root_ignores_fault_metadata_shape_details() {
+    let metadata = WitnessedMetadata {
+        schema_version: TRACE_SCHEMA_VERSION,
+        seed: 2,
+        requested_runs: 1,
+        executed_runs: 1,
+        parallel: false,
+        parallel_strategy: "sequential".to_string(),
+        case_filter: Some(0),
+        entropy_sources: vec![],
+        total_rng_calls: 0,
+        chaos_profile: None,
+        pass_threshold: None,
+    };
+    let agent_trace = vec![AgentTraceEntry {
+        step: 0,
+        role: "assistant".to_string(),
+        thought: "x".to_string(),
+        action: "y".to_string(),
+        tool_requests: vec![],
+        is_final: true,
+    }];
+
+    let base = ToolCall {
+        step: 0,
+        tool_call_idx: 0,
+        tool_name: "clawdbot.lookup".to_string(),
+        request: serde_json::json!({"k": "v"}),
+        outcome: ToolOutcome::Err {
+            error: cogitator::tooling::ToolError {
+                error_kind: cogitator::tooling::ToolErrorKind::Timeout,
+                message: Some("timeout".to_string()),
+            },
+            simulated_latency_ms: Some(90),
+        },
+        fault: Some(cogitator::tooling::TranscriptFault::Timeout {
+            domain: "tooling".to_string(),
+            timeout_ms: Some(200),
+        }),
+    };
+
+    let changed_fault_details = ToolCall {
+        fault: Some(cogitator::tooling::TranscriptFault::Timeout {
+            domain: "tooling".to_string(),
+            timeout_ms: None,
+        }),
+        ..base.clone()
+    };
+
+    let no_fault = ToolCall {
+        fault: None,
+        ..base.clone()
+    };
+
+    let root_a = witness_root_for_agent(&metadata, &agent_trace, &[base]);
+    let root_b = witness_root_for_agent(&metadata, &agent_trace, &[changed_fault_details]);
+    let root_c = witness_root_for_agent(&metadata, &agent_trace, &[no_fault]);
+
+    assert_eq!(root_a, root_b);
+    assert_ne!(root_a, root_c);
+}

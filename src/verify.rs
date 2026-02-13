@@ -3,16 +3,25 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use crate::model::{RunMetadata, TraceEvent, TRACE_SCHEMA_VERSION};
-use crate::trace::{encode_event, encode_witnessed_metadata};
+use crate::agent::AgentTraceEntry;
+use crate::model::{RunMetadata, TraceEvent, WitnessManifest, TRACE_SCHEMA_VERSION};
+use crate::tooling::ToolTranscriptRecord;
+use crate::trace::{compute_agent_witness_root, encode_event, encode_witnessed_metadata};
 use crate::witness::Witness;
+
+#[derive(Debug, Clone)]
+pub struct WitnessRootRecomputeReceipt {
+    pub expected: String,
+    pub computed: String,
+    pub matched: bool,
+}
 
 fn preview_80(s: &str) -> String {
     const N: usize = 80;
     let mut out = String::new();
     for (i, ch) in s.chars().enumerate() {
         if i >= N {
-            out.push_str("…");
+            out.push('…');
             break;
         }
         out.push(ch);
@@ -21,11 +30,9 @@ fn preview_80(s: &str) -> String {
 }
 
 fn hint_for_line(trimmed: &str) -> Option<&'static str> {
-    // Common user mistake: passing agent_trace.json (JSON array) or AgentTraceEntry objects.
     if trimmed.starts_with('[') {
         return Some(
-            "This looks like a JSON array (e.g., agent_trace.json). \
-verify expects NDJSON: one TraceEvent JSON object per line (trace.jsonl).",
+            "This looks like a JSON array (e.g., agent_trace.json). verify expects NDJSON: one TraceEvent JSON object per line (trace.jsonl).",
         );
     }
 
@@ -36,8 +43,7 @@ verify expects NDJSON: one TraceEvent JSON object per line (trace.jsonl).",
             || trimmed.contains("\"is_final\""))
     {
         return Some(
-            "This looks like an AgentTraceEntry (agent_trace.json), not a TraceEvent. \
-Point verify at trace.jsonl (NDJSON) from `run`, or emit trace.jsonl for demos.",
+            "This looks like an AgentTraceEntry (agent_trace.json), not a TraceEvent. Point verify at trace.jsonl (NDJSON) from `run`, or emit trace.jsonl for demos.",
         );
     }
 
@@ -135,4 +141,60 @@ pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<Strin
     }
 
     Ok(computed)
+}
+
+pub fn recompute_agent_witness_root_from_bundle(
+    witness_dir: &Path,
+    expect_override: Option<&str>,
+) -> Result<WitnessRootRecomputeReceipt> {
+    let manifest_path = witness_dir.join("witness_manifest.json");
+    let manifest_file = File::open(&manifest_path)
+        .with_context(|| format!("failed to open {}", manifest_path.display()))?;
+    let manifest: WitnessManifest = serde_json::from_reader(manifest_file)
+        .with_context(|| "failed to parse witness_manifest.json")?;
+
+    let meta_path = witness_dir.join(&manifest.meta_json);
+    let trace_path = witness_dir.join(&manifest.agent_trace_json);
+    let transcript_path = witness_dir.join(&manifest.tool_transcript_json);
+
+    let metadata: RunMetadata = serde_json::from_reader(
+        File::open(&meta_path)
+            .with_context(|| format!("failed to open {}", meta_path.display()))?,
+    )
+    .with_context(|| "failed to parse meta.json")?;
+
+    let agent_trace: Vec<AgentTraceEntry> = serde_json::from_reader(
+        File::open(&trace_path)
+            .with_context(|| format!("failed to open {}", trace_path.display()))?,
+    )
+    .with_context(|| "failed to parse agent_trace.json")?;
+
+    let transcript: ToolTranscriptRecord = serde_json::from_reader(
+        File::open(&transcript_path)
+            .with_context(|| format!("failed to open {}", transcript_path.display()))?,
+    )
+    .with_context(|| "failed to parse tool_transcript.json")?;
+
+    let expected = if let Some(expect) = expect_override {
+        expect.trim().to_string()
+    } else if let Some(path) = manifest.witness_root_txt.as_ref() {
+        let root_path = witness_dir.join(path);
+        std::fs::read_to_string(&root_path)
+            .with_context(|| format!("failed to read {}", root_path.display()))?
+            .trim()
+            .to_string()
+    } else {
+        anyhow::bail!(
+            "expected witness root missing; provide --expect or witness_root_txt in manifest"
+        )
+    };
+
+    let computed =
+        compute_agent_witness_root(&metadata.witnessed, &agent_trace, &transcript.entries)?;
+
+    Ok(WitnessRootRecomputeReceipt {
+        matched: computed == expected,
+        expected,
+        computed,
+    })
 }

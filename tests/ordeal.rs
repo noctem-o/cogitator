@@ -1,5 +1,5 @@
-use cogitator::ordeal::{OrdealConfig, TaskSuite, ORDEAL_TASKS_PATH};
 use cogitator::model::WitnessedMetadata;
+use cogitator::ordeal::{OrdealConfig, TaskSuite, ORDEAL_TASKS_PATH};
 use cogitator::report::DriftIssue;
 use cogitator::tooling::ToolTranscript;
 use cogitator::{drift, trace};
@@ -126,4 +126,56 @@ fn ordeal_replay_regression_reports_drift() {
         _ => false,
     });
     assert!(has_ordeal_issue);
+}
+
+#[test]
+fn ordeal_check_command_detects_drift() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let golden = temp.path().join("golden.txt");
+    std::fs::write(&golden, "deadbeef\n").expect("write golden");
+
+    let bin = env!("CARGO_BIN_EXE_cogitator");
+    let output = std::process::Command::new(bin)
+        .arg("ordeal")
+        .arg("check")
+        .arg("--golden")
+        .arg(golden.as_os_str())
+        .output()
+        .expect("run ordeal check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("drift detected"), "stderr: {stderr}");
+}
+
+#[test]
+fn ordeal_check_command_accepts_matching_golden() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let golden = temp.path().join("golden.txt");
+
+    let bin = env!("CARGO_BIN_EXE_cogitator");
+    let update = std::process::Command::new(bin)
+        .arg("ordeal")
+        .arg("check")
+        .arg("--golden")
+        .arg(golden.as_os_str())
+        .arg("--update-golden")
+        .output()
+        .expect("run ordeal check update");
+    assert!(update.status.success());
+
+    let output = std::process::Command::new(bin)
+        .arg("ordeal")
+        .arg("check")
+        .arg("--golden")
+        .arg(golden.as_os_str())
+        .output()
+        .expect("run ordeal check");
+
+    assert!(
+        output.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

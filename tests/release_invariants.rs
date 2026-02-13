@@ -24,6 +24,30 @@ fn canonical_json_is_byte_stable() {
 }
 
 #[test]
+fn canonical_json_matches_expected_bytes() {
+    let value = serde_json::json!({
+        "z": [3, 2, 1],
+        "a": {"emoji": "😀", "x": 1},
+    });
+
+    let bytes = canonical_json::to_vec(&value).expect("canonical bytes");
+    assert_eq!(
+        String::from_utf8(bytes).expect("utf8"),
+        r#"{"a":{"emoji":"😀","x":1},"z":[3,2,1]}"#
+    );
+}
+
+#[test]
+fn canonical_json_rejects_floats_in_release_and_debug() {
+    let value = serde_json::json!({"value": 0.25});
+    let err = canonical_json::to_vec(&value).expect_err("floats must be rejected");
+    assert!(
+        err.to_string().contains("rejected floating-point number"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn verify_witness_bundle_recomputes_hashes() {
     let temp = tempdir().expect("tempdir");
     let dir = temp.path();

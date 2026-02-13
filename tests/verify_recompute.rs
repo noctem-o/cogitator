@@ -1,0 +1,194 @@
+use std::fs;
+
+use cogitator::agent::AgentTraceEntry;
+use cogitator::canonical_json;
+use cogitator::model::{
+    ProvenanceMetadata, RunMetadata, WitnessManifest, WitnessedMetadata, TRACE_SCHEMA_VERSION,
+    WITNESS_MANIFEST_SCHEMA_VERSION,
+};
+use cogitator::tooling::{
+    ToolCall, ToolError, ToolErrorKind, ToolMode, ToolOutcome, ToolRequest, ToolTranscriptRecord,
+    TranscriptFault,
+};
+use cogitator::{drift, trace, verify};
+use tempfile::tempdir;
+
+fn write_bundle(dir: &std::path::Path, call: ToolCall) -> anyhow::Result<String> {
+    let meta_path = dir.join("meta.json");
+    let agent_trace_path = dir.join("agent_trace.json");
+    let tool_transcript_path = dir.join("tool_transcript.json");
+    let drift_report_path = dir.join("drift_report.json");
+    let hash_chain_path = dir.join("hash_chain.txt");
+    let witness_root_path = dir.join("witness_root.txt");
+    let witness_manifest_path = dir.join("witness_manifest.json");
+
+    let metadata = RunMetadata {
+        witnessed: WitnessedMetadata {
+            schema_version: TRACE_SCHEMA_VERSION,
+            seed: 7,
+            requested_runs: 1,
+            executed_runs: 1,
+            parallel: false,
+            parallel_strategy: "sequential".to_string(),
+            case_filter: Some(0),
+            entropy_sources: vec!["rng:StdRng(seed)".to_string()],
+            total_rng_calls: 0,
+            chaos_profile: None,
+            pass_threshold: None,
+        },
+        provenance: ProvenanceMetadata {
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            git_rev: None,
+            rustc_version: None,
+            cargo_version: None,
+            nix_store_path: None,
+            agent_threads: Some(1),
+            nix_provenance: None,
+            variability_factors: Vec::new(),
+        },
+    };
+
+    let agent_trace = vec![AgentTraceEntry {
+        step: 0,
+        role: "assistant".to_string(),
+        thought: "probe".to_string(),
+        action: "lookup".to_string(),
+        tool_requests: vec![ToolRequest {
+            tool_name: "clawdbot.lookup".to_string(),
+            arguments: serde_json::json!({"case": "alpha"}),
+        }],
+        is_final: true,
+    }];
+
+    let transcript = ToolTranscriptRecord {
+        schema_version: cogitator::tooling::TOOL_TRANSCRIPT_SCHEMA_VERSION,
+        mode: ToolMode::Live,
+        entries: vec![call],
+    };
+
+    let drift_report = drift::DriftReport {
+        schema_version: drift::DRIFT_SCHEMA_VERSION,
+        drifted: false,
+        issues: Vec::new(),
+    };
+
+    canonical_json::write_json(&meta_path, &metadata, "meta.json")?;
+    canonical_json::write_json(&agent_trace_path, &agent_trace, "agent_trace.json")?;
+    canonical_json::write_json(&tool_transcript_path, &transcript, "tool_transcript.json")?;
+    canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")?;
+
+    let chain = drift::build_hash_chain(&agent_trace, &transcript.entries)?;
+    fs::write(&hash_chain_path, chain.join("\n") + "\n")?;
+
+    let witness_root =
+        trace::compute_agent_witness_root(&metadata.witnessed, &agent_trace, &transcript.entries)?;
+    fs::write(&witness_root_path, format!("{}\n", witness_root))?;
+
+    let artifact_hashes = drift::artifact_hashes(&[
+        &meta_path,
+        &agent_trace_path,
+        &tool_transcript_path,
+        &drift_report_path,
+        &hash_chain_path,
+        &witness_root_path,
+    ])?;
+    let bundle_hash = drift::bundle_hash(&artifact_hashes)?;
+
+    let witness_manifest = WitnessManifest {
+        schema_version: WITNESS_MANIFEST_SCHEMA_VERSION,
+        run_id: 0,
+        agent: "clawdbot".to_string(),
+        mode: "live".to_string(),
+        meta_json: "meta.json".to_string(),
+        agent_trace_json: "agent_trace.json".to_string(),
+        tool_transcript_json: "tool_transcript.json".to_string(),
+        drift_report_json: "drift_report.json".to_string(),
+        hash_chain_txt: "hash_chain.txt".to_string(),
+        chaos_profile_json: None,
+        witness_root_txt: Some("witness_root.txt".to_string()),
+        nix_provenance_json: None,
+        artifact_hashes,
+        bundle_hash,
+        replay_source: None,
+    };
+    canonical_json::write_json(
+        &witness_manifest_path,
+        &witness_manifest,
+        "witness_manifest.json",
+    )?;
+
+    Ok(witness_root)
+}
+
+fn base_call() -> ToolCall {
+    ToolCall {
+        step: 0,
+        tool_call_idx: 0,
+        tool_name: "clawdbot.lookup".to_string(),
+        request: serde_json::json!({"case": "alpha"}),
+        outcome: ToolOutcome::Err {
+            error: ToolError {
+                error_kind: ToolErrorKind::Timeout,
+                message: Some("timeout".to_string()),
+            },
+            simulated_latency_ms: Some(120),
+        },
+        fault: Some(TranscriptFault::Timeout {
+            domain: "tooling".to_string(),
+            timeout_ms: Some(500),
+        }),
+    }
+}
+
+#[test]
+fn recompute_witness_root_happy_path() {
+    let temp = tempdir().expect("tempdir");
+    write_bundle(temp.path(), base_call()).expect("bundle");
+
+    let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
+        .expect("recompute succeeds");
+    assert!(receipt.matched);
+}
+
+#[test]
+fn recompute_witness_root_detects_semantic_tamper() {
+    let temp = tempdir().expect("tempdir");
+    write_bundle(temp.path(), base_call()).expect("bundle");
+
+    let path = temp.path().join("tool_transcript.json");
+    let mut transcript: ToolTranscriptRecord =
+        serde_json::from_slice(&fs::read(&path).expect("read transcript")).expect("parse");
+    if let ToolOutcome::Err { error, .. } = &mut transcript.entries[0].outcome {
+        error.message = Some("changed-message".to_string());
+    }
+    canonical_json::write_json(&path, &transcript, "tool_transcript.json").expect("rewrite");
+
+    let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
+        .expect("recompute succeeds");
+    assert!(!receipt.matched);
+}
+
+#[test]
+fn recompute_witness_root_ignores_provenance_only_mutation() {
+    let temp = tempdir().expect("tempdir");
+    write_bundle(temp.path(), base_call()).expect("bundle");
+
+    let path = temp.path().join("tool_transcript.json");
+    let mut transcript: ToolTranscriptRecord =
+        serde_json::from_slice(&fs::read(&path).expect("read transcript")).expect("parse");
+    if let ToolOutcome::Err {
+        simulated_latency_ms,
+        ..
+    } = &mut transcript.entries[0].outcome
+    {
+        *simulated_latency_ms = None;
+    }
+    if let Some(TranscriptFault::Timeout { timeout_ms, .. }) = &mut transcript.entries[0].fault {
+        *timeout_ms = None;
+    }
+    canonical_json::write_json(&path, &transcript, "tool_transcript.json").expect("rewrite");
+
+    let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
+        .expect("recompute succeeds");
+    assert!(receipt.matched);
+}

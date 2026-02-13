@@ -4,8 +4,6 @@ pub use crate::ordeal::{
 };
 
 pub use crate::ordeal::{
-    LEGACY_GAUNTLET_TASKS_PATH,
+    run_ordeal as run_gauntlet, StepSpec, LEGACY_GAUNTLET_TASKS_PATH,
     ORDEAL_TASK_COUNT as GAUNTLET_TASK_COUNT,
-    run_ordeal as run_gauntlet,
-    StepSpec,
 };

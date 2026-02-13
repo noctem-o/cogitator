@@ -29,7 +29,10 @@ pub struct VerifyReport {
     pub bundle_hash_actual: String,
 }
 
-pub fn detect_transcript_drift(expected: &ToolTranscriptRecord, actual: &ToolTranscriptRecord) -> DriftReport {
+pub fn detect_transcript_drift(
+    expected: &ToolTranscriptRecord,
+    actual: &ToolTranscriptRecord,
+) -> DriftReport {
     let mut issues = Vec::new();
 
     if expected.schema_version != actual.schema_version {
@@ -39,18 +42,18 @@ pub fn detect_transcript_drift(expected: &ToolTranscriptRecord, actual: &ToolTra
         });
     }
 
-    let mode_is_compatible =
-    expected.mode == actual.mode
-    || (expected.mode == crate::tooling::ToolMode::Live && actual.mode == crate::tooling::ToolMode::Replay)
-    || (expected.mode == crate::tooling::ToolMode::Replay && actual.mode == crate::tooling::ToolMode::Live);
+    let mode_is_compatible = expected.mode == actual.mode
+        || (expected.mode == crate::tooling::ToolMode::Live
+            && actual.mode == crate::tooling::ToolMode::Replay)
+        || (expected.mode == crate::tooling::ToolMode::Replay
+            && actual.mode == crate::tooling::ToolMode::Live);
 
-if !mode_is_compatible {
-    issues.push(DriftIssue::TranscriptModeMismatch {
-        expected: format!("{:?}", expected.mode),
-        actual: format!("{:?}", actual.mode),
-    });
-}
-
+    if !mode_is_compatible {
+        issues.push(DriftIssue::TranscriptModeMismatch {
+            expected: format!("{:?}", expected.mode),
+            actual: format!("{:?}", actual.mode),
+        });
+    }
 
     if expected.entries.len() != actual.entries.len() {
         issues.push(DriftIssue::TranscriptLengthMismatch {
@@ -103,7 +106,10 @@ if !mode_is_compatible {
 /// A human-friendly hash chain over the agent trace + tool calls.
 ///
 /// This is intentionally *not* the witness root. It’s a debugging aid you can open in a terminal.
-pub fn build_hash_chain(agent_trace: &[AgentTraceEntry], tool_calls: &[ToolCall]) -> Result<Vec<String>> {
+pub fn build_hash_chain(
+    agent_trace: &[AgentTraceEntry],
+    tool_calls: &[ToolCall],
+) -> Result<Vec<String>> {
     let mut out = Vec::new();
     let mut prev = String::from("genesis");
 
@@ -205,29 +211,16 @@ pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
     let manifest_path = witness_dir.join("witness_manifest.json");
     let file = File::open(&manifest_path)
         .with_context(|| format!("failed to open {}", manifest_path.display()))?;
-    let manifest: WitnessManifest = serde_json::from_reader(file)
-        .with_context(|| "failed to parse witness_manifest.json")?;
+    let manifest: WitnessManifest =
+        serde_json::from_reader(file).with_context(|| "failed to parse witness_manifest.json")?;
 
-    let mut artifact_paths: Vec<PathBuf> = Vec::new();
-
-    // Required
-    artifact_paths.push(resolve_manifest_artifact_path(witness_dir, &manifest.meta_json));
-    artifact_paths.push(resolve_manifest_artifact_path(
-        witness_dir,
-        &manifest.agent_trace_json,
-    ));
-    artifact_paths.push(resolve_manifest_artifact_path(
-        witness_dir,
-        &manifest.tool_transcript_json,
-    ));
-    artifact_paths.push(resolve_manifest_artifact_path(
-        witness_dir,
-        &manifest.drift_report_json,
-    ));
-    artifact_paths.push(resolve_manifest_artifact_path(
-        witness_dir,
-        &manifest.hash_chain_txt,
-    ));
+    let mut artifact_paths: Vec<PathBuf> = vec![
+        resolve_manifest_artifact_path(witness_dir, &manifest.meta_json),
+        resolve_manifest_artifact_path(witness_dir, &manifest.agent_trace_json),
+        resolve_manifest_artifact_path(witness_dir, &manifest.tool_transcript_json),
+        resolve_manifest_artifact_path(witness_dir, &manifest.drift_report_json),
+        resolve_manifest_artifact_path(witness_dir, &manifest.hash_chain_txt),
+    ];
 
     // Optional
     if let Some(ref path) = manifest.chaos_profile_json {

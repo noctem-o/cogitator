@@ -7,6 +7,7 @@ use std::path::Path;
 
 pub fn to_vec<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let value = serde_json::to_value(value).context("serialize to json value")?;
+    ensure_no_floats(&value)?;
     let canonical = canonicalize_value(value);
     let mut buffer = Vec::new();
     let formatter = serde_json::ser::CompactFormatter;
@@ -50,5 +51,23 @@ fn canonicalize_value(value: Value) -> Value {
         }
         Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_value).collect()),
         other => other,
+    }
+}
+
+fn ensure_no_floats(value: &Value) -> Result<()> {
+    if contains_float(value) {
+        anyhow::bail!(
+            "canonicalization rejected floating-point number in witnessed material; use integers or canonical strings"
+        );
+    }
+    Ok(())
+}
+
+fn contains_float(value: &Value) -> bool {
+    match value {
+        Value::Number(num) => num.is_f64(),
+        Value::Array(values) => values.iter().any(contains_float),
+        Value::Object(map) => map.values().any(contains_float),
+        _ => false,
     }
 }

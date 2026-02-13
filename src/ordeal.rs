@@ -80,11 +80,6 @@ pub struct TaskSuite {
 }
 
 impl TaskSuite {
-    pub fn load_default() -> Result<Self> {
-        let path = resolve_task_path(ORDEAL_TASKS_PATH)?;
-        Self::load(&path)
-    }
-
     pub fn load(path: &Path) -> Result<Self> {
         let resolved: PathBuf = if path.exists() {
             path.to_path_buf()
@@ -112,7 +107,12 @@ impl TaskSuite {
 
         // Helper for richer parse errors (prints first bytes)
         let parse_json_bytes = |b: &[u8]| -> Result<Vec<TaskSpec>> {
-            let head = b.iter().take(16).map(|x| format!("{:02x}", x)).collect::<Vec<_>>().join(" ");
+            let head = b
+                .iter()
+                .take(16)
+                .map(|x| format!("{:02x}", x))
+                .collect::<Vec<_>>()
+                .join(" ");
             serde_json::from_slice(b).with_context(|| {
                 format!(
                     "failed to parse ordeal tasks at {} (first bytes: {})",
@@ -135,10 +135,14 @@ impl TaskSuite {
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
             let s = String::from_utf16(&u16s).with_context(|| {
-                format!("failed to decode UTF-16LE ordeal tasks at {}", resolved.display())
+                format!(
+                    "failed to decode UTF-16LE ordeal tasks at {}",
+                    resolved.display()
+                )
             })?;
-            serde_json::from_str(&s)
-                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+            serde_json::from_str(&s).with_context(|| {
+                format!("failed to parse ordeal tasks at {}", resolved.display())
+            })?
         } else if bytes.starts_with(&[0xFE, 0xFF]) {
             // UTF-16 BE with BOM
             if (bytes.len() - 2) % 2 != 0 {
@@ -152,10 +156,14 @@ impl TaskSuite {
                 .map(|c| u16::from_be_bytes([c[0], c[1]]))
                 .collect();
             let s = String::from_utf16(&u16s).with_context(|| {
-                format!("failed to decode UTF-16BE ordeal tasks at {}", resolved.display())
+                format!(
+                    "failed to decode UTF-16BE ordeal tasks at {}",
+                    resolved.display()
+                )
             })?;
-            serde_json::from_str(&s)
-                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+            serde_json::from_str(&s).with_context(|| {
+                format!("failed to parse ordeal tasks at {}", resolved.display())
+            })?
         } else if bytes.len() >= 2 && bytes[0] == b'[' && bytes[1] == 0x00 {
             // UTF-16 LE without BOM: '[' '\0' ...
             if bytes.len() % 2 != 0 {
@@ -174,8 +182,9 @@ impl TaskSuite {
                     resolved.display()
                 )
             })?;
-            serde_json::from_str(&s)
-                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+            serde_json::from_str(&s).with_context(|| {
+                format!("failed to parse ordeal tasks at {}", resolved.display())
+            })?
         } else if bytes.len() >= 2 && bytes[0] == 0x00 && bytes[1] == b'[' {
             // UTF-16 BE without BOM: '\0' '[' ...
             if bytes.len() % 2 != 0 {
@@ -194,8 +203,9 @@ impl TaskSuite {
                     resolved.display()
                 )
             })?;
-            serde_json::from_str(&s)
-                .with_context(|| format!("failed to parse ordeal tasks at {}", resolved.display()))?
+            serde_json::from_str(&s).with_context(|| {
+                format!("failed to parse ordeal tasks at {}", resolved.display())
+            })?
         } else {
             // Assume UTF-8
             parse_json_bytes(&bytes)?
@@ -329,8 +339,13 @@ pub fn run_ordeal(
                 if config.regress {
                     // Intentional mismatch for demo/regression scenarios:
                     // still advance transcript cursor, but evaluate expected against the regressed output.
-                    let regressed =
-                        ordeal_stub_response(config.seed, config.run_id, tool_call_idx, &request, true)?;
+                    let regressed = ordeal_stub_response(
+                        config.seed,
+                        config.run_id,
+                        tool_call_idx,
+                        &request,
+                        true,
+                    )?;
 
                     if replayed.output != regressed.output {
                         injected_regression_issue = Some(DriftIssue::OrdealOutputMismatch {

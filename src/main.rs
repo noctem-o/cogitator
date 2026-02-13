@@ -1,8 +1,8 @@
+use crate::agent::Agent;
 use anyhow::{Context, Result};
 use clap::builder::ArgPredicate;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
-use crate::agent::Agent;
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
@@ -53,6 +53,7 @@ pub enum CommandLine {
     Run(RunArgs),
     Verify(VerifyArgs),
     Demo(DemoArgs),
+    Ordeal(OrdealArgs),
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -77,6 +78,29 @@ pub enum LlmToggle {
 #[derive(Subcommand, Debug)]
 pub enum DemoCommand {
     Drift(DemoDriftArgs),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OrdealCommand {
+    Check(OrdealCheckArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct OrdealArgs {
+    #[command(subcommand)]
+    pub command: OrdealCommand,
+}
+
+#[derive(Args, Debug)]
+pub struct OrdealCheckArgs {
+    #[arg(long, default_value = "goldens/ordeal_witness_root.txt")]
+    pub golden: PathBuf,
+
+    #[arg(long)]
+    pub update_golden: bool,
+
+    #[arg(long, default_value_t = 42)]
+    pub seed: u64,
 }
 
 #[derive(Args, Debug)]
@@ -264,6 +288,9 @@ pub struct VerifyArgs {
 
     #[arg(long)]
     pub witness: Option<PathBuf>,
+
+    #[arg(long)]
+    pub recompute_witness_root: bool,
 }
 
 fn main() -> Result<()> {
@@ -273,6 +300,7 @@ fn main() -> Result<()> {
         CommandLine::Run(args) => run(args),
         CommandLine::Verify(args) => verify_cmd(args),
         CommandLine::Demo(args) => demo_cmd(args),
+        CommandLine::Ordeal(args) => ordeal_cmd(args),
     }
 }
 
@@ -971,6 +999,24 @@ fn run_agent(args: RunArgs) -> Result<()> {
 }
 
 fn verify_cmd(args: VerifyArgs) -> Result<()> {
+    if args.recompute_witness_root {
+        let witness_dir = args
+            .witness
+            .as_ref()
+            .filter(|path| path.is_dir())
+            .ok_or_else(|| anyhow::anyhow!("--recompute-witness-root requires --witness <dir>"))?;
+        let receipt =
+            verify::recompute_agent_witness_root_from_bundle(witness_dir, args.expect.as_deref())?;
+        println!(
+            "Recomputed witness_root: matched={} expected={} computed={}",
+            receipt.matched, receipt.expected, receipt.computed
+        );
+        if !receipt.matched {
+            anyhow::bail!("recomputed witness_root mismatch");
+        }
+        return Ok(());
+    }
+
     if let Some(ref witness) = args.witness {
         if witness.is_dir() {
             let report = drift::verify_witness_bundle(witness)?;
@@ -1000,6 +1046,67 @@ fn verify_cmd(args: VerifyArgs) -> Result<()> {
 
     let computed = verify::verify(&args.meta, &args.trace, &expect)?;
     println!("Verified witness_root={}", computed);
+    Ok(())
+}
+
+fn ordeal_cmd(args: OrdealArgs) -> Result<()> {
+    match args.command {
+        OrdealCommand::Check(check) => ordeal_check_cmd(check),
+    }
+}
+
+fn ordeal_check_cmd(args: OrdealCheckArgs) -> Result<()> {
+    let out_dir = PathBuf::from("out_ci");
+    let run_args = RunArgs {
+        seed: args.seed,
+        runs: 1,
+        case: Some(0),
+        out_dir: out_dir.clone(),
+        clean: true,
+        no_tui: true,
+        parallel: false,
+        created_at: None,
+        agent: Some("ordeal".to_string()),
+        replay: None,
+        threads: Some(1),
+        faults: Some(FaultToggle::Off),
+        fault_profile: Some(FaultProfile::None),
+        fault_timeout_rate: None,
+        fault_corrupt_rate: None,
+        fault_drop_rate: None,
+        fault_latency_rate: None,
+        llm: Some(LlmToggle::Off),
+        llm_model: Some("stub".to_string()),
+        llm_seed: None,
+        pass_threshold: Some("0.5".to_string()),
+        nix_provenance: nix_provenance::NixProvenanceMode::Off,
+    };
+
+    run(run_args)?;
+
+    let actual = read_trimmed(&out_dir.join("run_0000").join("witness_root.txt"))?;
+    if args.update_golden {
+        io_utils::write_atomic_string(
+            &args.golden,
+            "ordeal golden witness root",
+            &(actual.clone()
+                + "
+"),
+        )?;
+        println!("Updated golden {} with {}", args.golden.display(), actual);
+        return Ok(());
+    }
+
+    let expected = read_trimmed(&args.golden)?;
+    if expected != actual {
+        anyhow::bail!(
+            "ordeal witness root drift detected: expected {} actual {} (use --update-golden for intentional changes)",
+            expected,
+            actual
+        );
+    }
+
+    println!("Ordeal witness root matches golden {}", actual);
     Ok(())
 }
 
@@ -1391,6 +1498,11 @@ fn command_version(command: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn read_trimmed(path: &Path) -> Result<String> {
+    let content = fs::read_to_string(path).with_context(|| "failed to read witness file")?;
+    Ok(content.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{resolve_ordeal_regress, Cli};
@@ -1399,7 +1511,10 @@ mod tests {
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        ENV_LOCK.get_or_init(|| Mutex::new(())).lock().expect("env lock")
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock")
     }
 
     struct EnvRestore {
@@ -1481,9 +1596,4 @@ mod tests {
         std::env::set_var("COGITATOR_GAUNTLET_REGRESS", "0");
         assert!(resolve_ordeal_regress());
     }
-}
-
-fn read_trimmed(path: &Path) -> Result<String> {
-    let content = fs::read_to_string(path).with_context(|| "failed to read witness file")?;
-    Ok(content.trim().to_string())
 }

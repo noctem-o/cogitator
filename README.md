@@ -236,6 +236,7 @@ Runs a baseline and then a perturbed scenario, emitting a drift report you can v
 ```bash
 ./target/release/cogitator demo drift --seed 1 --threads 2 --fault-profile ci --out-dir demo_out --clean
 ./target/release/cogitator verify --witness demo_out/drift/baseline_faults
+./target/release/cogitator verify --witness demo_out/drift/baseline_faults --recompute-witness-root
 ```
 
 ---
@@ -351,6 +352,15 @@ Example:
 ---
 
 ## Ordeal witness gate in CI
+
+Use one deterministic command for golden-root drift checks:
+
+```bash
+./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt
+# Intentional witness change:
+./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt --update-golden
+```
+
 
 Cogitator includes a minimal `ordeal` agent case designed as a pinned CI gate.
 It keeps CI costs low while still asserting a stable end-to-end witness bundle.

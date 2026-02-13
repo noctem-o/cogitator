@@ -19,49 +19,28 @@ pub enum DriftIssue {
     },
 
     /// Tool request (name or arguments) mismatch
-    ToolRequestMismatch {
-        index: u32,
-    },
+    ToolRequestMismatch { index: u32 },
 
-        /// Tool transcript schema version differs
-    TranscriptSchemaMismatch {
-        expected: u32,
-        actual: u32,
-    },
+    /// Tool transcript schema version differs
+    TranscriptSchemaMismatch { expected: u32, actual: u32 },
 
     /// Tool transcript mode differs (record vs replay, etc.)
-    TranscriptModeMismatch {
-        expected: String,
-        actual: String,
-    },
+    TranscriptModeMismatch { expected: String, actual: String },
 
     /// Tool transcript entry count differs
-    TranscriptLengthMismatch {
-        expected: u32,
-        actual: u32,
-    },
+    TranscriptLengthMismatch { expected: u32, actual: u32 },
 
     /// Tool fault injection differs for a given tool call
-    ToolFaultMismatch {
-        index: u32,
-    },
-
+    ToolFaultMismatch { index: u32 },
 
     /// Tool outcome (response) mismatch
-    ToolOutcomeMismatch {
-        index: u32,
-    },
+    ToolOutcomeMismatch { index: u32 },
 
     /// Number of tool calls differs
-    ToolCallCountMismatch {
-        expected: u32,
-        actual: u32,
-    },
+    ToolCallCountMismatch { expected: u32, actual: u32 },
 
     /// Unexpected tool request during replay
-    UnexpectedToolRequest {
-        index: u32,
-    },
+    UnexpectedToolRequest { index: u32 },
 
     /// Ordeal-specific output mismatch (for ordeal.rs tests)
     OrdealOutputMismatch {

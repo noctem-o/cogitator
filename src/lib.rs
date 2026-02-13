@@ -2,9 +2,9 @@ pub mod agent;
 pub mod canonical_json;
 pub mod chaos;
 pub mod drift;
-pub mod gauntlet; // legacy compatibility re-exports (deprecated name)
 pub mod eval;
-pub mod hex;  // NEW: Centralized hex encoding utilities
+pub mod gauntlet; // legacy compatibility re-exports (deprecated name)
+pub mod hex; // NEW: Centralized hex encoding utilities
 pub mod io_utils;
 pub mod llm;
 pub mod model;
