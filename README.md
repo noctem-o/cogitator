@@ -30,6 +30,7 @@ same inputs and environment constraints.
 - [Deterministic Simulation Testing (DST)](#deterministic-simulation-testing-dst)
 - [Verification workflow (no Makefile)](#verification-workflow-no-makefile)
 - [Ordeal witness gate in CI](#ordeal-witness-gate-in-ci)
+- [Release engineering](#release-engineering)
 - [Nix (optional)](#nix-optional)
 - [Project layout](#project-layout)
 
@@ -101,6 +102,13 @@ Optional TUI build:
 
 ```bash
 cargo build --release --features tui
+```
+
+Launch with neon cockpit styling (or `cyan`/`mono`) and explicit no-color mode:
+
+```bash
+./target/release/cogitator run --agent ordeal --runs 1 --theme neon
+./target/release/cogitator run --agent ordeal --runs 1 --theme cyan --no-color
 ```
 
 ---
@@ -384,6 +392,15 @@ The script compares the generated witness root with the golden value in
 `goldens/ordeal_witness_root.txt` and prints drift diagnostics on mismatch.
 
 ---
+
+
+## Release engineering
+
+Cogitator is set up for release automation with:
+
+- `cargo-dist` metadata in `Cargo.toml` for GitHub release artifacts/installers.
+- `git-cliff` configuration in `cliff.toml` for changelog generation from commit history.
+- `--version` and `--help` now include git SHA metadata when available at build time.
 
 ## Nix (optional)
 

@@ -24,7 +24,48 @@ use ratatui::{
 };
 
 #[cfg(feature = "tui")]
+#[derive(Clone, Copy)]
+struct Palette {
+    accent: Color,
+    secondary: Color,
+    muted: Color,
+}
+
+#[cfg(feature = "tui")]
+impl Palette {
+    fn from_theme(theme: &str, no_color: bool) -> Self {
+        if no_color {
+            return Self {
+                accent: Color::Reset,
+                secondary: Color::Reset,
+                muted: Color::Reset,
+            };
+        }
+
+        match theme {
+            "neon" => Self {
+                accent: Color::Green,
+                secondary: Color::Cyan,
+                muted: Color::Gray,
+            },
+            "cyan" => Self {
+                accent: Color::Cyan,
+                secondary: Color::Green,
+                muted: Color::Gray,
+            },
+            _ => Self {
+                accent: Color::White,
+                secondary: Color::Gray,
+                muted: Color::DarkGray,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "tui")]
 pub fn launch(
+    theme: &str,
+    no_color: bool,
     seed: u64,
     runs: u32,
     results: &[CaseResult],
@@ -40,6 +81,7 @@ pub fn launch(
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
     let pr_url = std::env::var("COGITATOR_PR_URL").ok();
+    let palette = Palette::from_theme(theme, no_color);
 
     let pass_count = results.iter().filter(|result| result.passed).count();
     let fail_count = results.len().saturating_sub(pass_count);
@@ -63,16 +105,16 @@ pub fn launch(
                     Span::styled(
                         " ▸ COGITATOR",
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(palette.secondary)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         "  deterministic attestation cockpit",
-                        Style::default().fg(Color::Gray),
+                        Style::default().fg(palette.muted),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled(" witness summary", Style::default().fg(Color::Green)),
+                    Span::styled(" witness summary", Style::default().fg(palette.accent)),
                     Span::raw(format!("  •  Seed {}", seed)),
                 ]),
             ])
@@ -176,7 +218,7 @@ pub fn launch(
                 .borders(Borders::ALL)
                 .title(view_pr_title)
                 .border_style(if pr_url.is_some() {
-                    Style::default().fg(Color::Green)
+                    Style::default().fg(palette.accent)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 });
@@ -208,6 +250,8 @@ pub fn launch(
 
 #[cfg(feature = "tui")]
 pub fn launch_agent(
+    theme: &str,
+    no_color: bool,
     agent_name: &str,
     run_id: u32,
     seed: u64,
@@ -224,10 +268,11 @@ pub fn launch_agent(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
+    let palette = Palette::from_theme(theme, no_color);
     let warning_style = if drift_report.drifted {
         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::Green)
+        Style::default().fg(palette.accent)
     };
 
     loop {
@@ -247,7 +292,7 @@ pub fn launch_agent(
                 Span::styled(
                     "▸ COGITATOR // Agent Observatory",
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(palette.secondary)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(format!("  •  Agent {}  •  Run {}", agent_name, run_id)),

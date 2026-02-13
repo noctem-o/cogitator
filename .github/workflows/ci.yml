@@ -34,6 +34,15 @@ jobs:
       - name: Verify demo bundle
         run: cargo run --locked -- verify --witness demo_out/drift/baseline_faults
 
+      - name: Recompute witness root from demo bundle
+        run: cargo run --locked -- verify --witness demo_out/drift/baseline_faults --recompute-witness-root
+
+      - name: Determinism smoke test
+        run: |
+          cargo run --locked -- run --seed 99 --runs 5 --out-dir smoke_a --clean --no-tui
+          cargo run --locked -- run --seed 99 --runs 5 --out-dir smoke_b --clean --no-tui
+          diff -u smoke_a/witness_root.txt smoke_b/witness_root.txt
+
   ordeal-witness:
     runs-on: ubuntu-latest
     defaults:
