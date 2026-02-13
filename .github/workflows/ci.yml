@@ -43,15 +43,46 @@ jobs:
           cargo run --locked -- run --seed 99 --runs 5 --out-dir smoke_b --clean --no-tui
           diff -u smoke_a/witness_root.txt smoke_b/witness_root.txt
 
-      - name: Build without working git binary
+  no-git-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and smoke test without .git and without git on PATH
         run: |
-          mkdir -p fakebin
-          cat > fakebin/git <<'SH'
-          #!/usr/bin/env bash
-          exit 127
-          SH
-          chmod +x fakebin/git
-          PATH="$PWD/fakebin:$PATH" cargo build --locked
+          tmpdir="$(mktemp -d)"
+          tar -C "$GITHUB_WORKSPACE" --exclude=.git -cf - . | tar -C "$tmpdir" -xf -
+
+          cd "$tmpdir"
+          test ! -d .git
+
+          toolbin="$tmpdir/toolbin"
+          mkdir -p "$toolbin"
+          while IFS= read -r tool; do
+            ln -s "$tool" "$toolbin/$(basename "$tool")"
+          done < <(find /bin /usr/bin -maxdepth 1 \( -type f -o -type l \) ! -name git)
+
+          export PATH="$HOME/.cargo/bin:$toolbin:/usr/sbin:/sbin"
+          hash -r
+          if command -v git >/dev/null 2>&1; then
+            echo "git must not be on PATH for this gate"
+            exit 1
+          fi
+
+          cargo build --locked
+          cargo test --locked -q --test version_output
+          ./target/debug/cogitator --version | tee version.txt
+          grep -Eq '^cogitator [0-9]+\.[0-9]+\.[0-9]+ \(([0-9a-f]{7,40}|unknown)\)$' version.txt
 
   ordeal-witness:
     runs-on: ubuntu-latest
@@ -90,8 +121,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: RustSec advisory audit
-        run: cargo audit
+        uses: rustsec/audit-check@v2

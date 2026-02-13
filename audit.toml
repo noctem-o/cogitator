@@ -1,0 +1,9 @@
+# RustSec advisory configuration for CI (`rustsec/audit-check`).
+#
+# Escape hatch:
+# - Add a temporary advisory ID under `ignore` only when there is a tracked,
+#   time-bounded mitigation plan.
+# - Prefer upgrading dependencies over suppressing advisories.
+
+[advisories]
+ignore = []

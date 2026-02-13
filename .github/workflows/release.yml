@@ -8,7 +8,9 @@ on:
 jobs:
   dist:
     permissions:
-      contents: write
+      contents: read
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,3 +21,8 @@ jobs:
         with:
           dist-version: latest
           args: build --artifacts=global
+
+      - name: Attest release build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: dist/*
