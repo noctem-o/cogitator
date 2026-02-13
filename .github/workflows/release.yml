@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  dist:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run cargo-dist
+        uses: axodotdev/cargo-dist-action@v1
+        with:
+          dist-version: latest
+          args: build --artifacts=global

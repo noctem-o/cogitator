@@ -43,6 +43,16 @@ jobs:
           cargo run --locked -- run --seed 99 --runs 5 --out-dir smoke_b --clean --no-tui
           diff -u smoke_a/witness_root.txt smoke_b/witness_root.txt
 
+      - name: Build without working git binary
+        run: |
+          mkdir -p fakebin
+          cat > fakebin/git <<'SH'
+          #!/usr/bin/env bash
+          exit 127
+          SH
+          chmod +x fakebin/git
+          PATH="$PWD/fakebin:$PATH" cargo build --locked
+
   ordeal-witness:
     runs-on: ubuntu-latest
     defaults:
@@ -69,3 +79,19 @@ jobs:
           path: |
             out_ci/run_0000
             goldens/ordeal_witness_root.txt
+
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: RustSec advisory audit
+        run: cargo audit
