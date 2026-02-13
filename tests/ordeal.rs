@@ -145,11 +145,7 @@ fn ordeal_check_command_detects_drift() {
         .expect("run ordeal check");
 
     assert!(!output.status.success());
-    let agent_trace = temp
-        .path()
-        .join("out_ci")
-        .join("run_0000")
-        .join("agent_trace.json");
+    let agent_trace = ordeal_run_dir(temp.path()).join("agent_trace.json");
     assert!(agent_trace.exists(), "missing {}", agent_trace.display());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("drift detected"), "stderr: {stderr}");
@@ -188,10 +184,23 @@ fn ordeal_check_command_accepts_matching_golden() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let agent_trace = temp
-        .path()
-        .join("out_ci")
-        .join("run_0000")
-        .join("agent_trace.json");
+    let agent_trace = ordeal_run_dir(temp.path()).join("agent_trace.json");
     assert!(agent_trace.exists(), "missing {}", agent_trace.display());
+}
+
+fn ordeal_run_dir(root: &std::path::Path) -> std::path::PathBuf {
+    let out_ci = root.join("out_ci");
+    let mut run_dirs = std::fs::read_dir(&out_ci)
+        .expect("read out_ci")
+        .map(|entry| entry.expect("read out_ci entry").path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    run_dirs.sort();
+    assert_eq!(
+        run_dirs.len(),
+        1,
+        "expected exactly one run dir under {}",
+        out_ci.display()
+    );
+    run_dirs.remove(0)
 }
