@@ -1,5 +1,11 @@
 name: CI
 
+permissions:
+  contents: read
+
+env:
+  CARGO_DIST_VERSION: 0.28.0
+
 on:
   push:
   pull_request:
@@ -55,7 +61,15 @@ jobs:
           rustup default stable
 
       - name: Install cargo-dist
-        run: cargo install --locked cargo-dist --version 0.28.0
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
+            -o /tmp/cargo-dist-installer.sh
+          sh /tmp/cargo-dist-installer.sh --no-modify-path --bin-dir "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify cargo-dist version
+        run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts (dry-run, no publish)
         run: cargo dist build --artifacts=global
@@ -140,5 +154,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.2.2
 
+      - name: Record resolved rustsec/audit-check v2 SHA
+        run: ./scripts/resolve_audit_check_sha.sh
+
       - name: RustSec advisory audit
+        # TODO: Replace @v2 with a full commit SHA once a networked maintainer run confirms the resolved ref.
         uses: rustsec/audit-check@v2

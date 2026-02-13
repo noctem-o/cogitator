@@ -1,5 +1,8 @@
 name: Release
 
+env:
+  CARGO_DIST_VERSION: 0.28.0
+
 on:
   push:
     tags:
@@ -22,7 +25,15 @@ jobs:
           rustup default stable
 
       - name: Install cargo-dist
-        run: cargo install --locked cargo-dist --version 0.28.0
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
+            -o /tmp/cargo-dist-installer.sh
+          sh /tmp/cargo-dist-installer.sh --no-modify-path --bin-dir "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify cargo-dist version
+        run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts
         run: cargo dist build --artifacts=global
