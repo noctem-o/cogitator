@@ -47,25 +47,28 @@ fn run_writes_report_json_with_floats_and_keeps_meta_canonical() {
         .and_then(|rows| rows.first())
         .expect("results has at least one row");
     assert!(
-        first["difficulty"].as_f64().is_some(),
-        "difficulty should be a floating-point JSON number"
+        first["difficulty"].is_number() && first["difficulty"].as_i64().is_none(),
+        "difficulty should be encoded as a non-integer JSON number"
     );
     assert!(
-        first["score"].as_f64().is_some(),
-        "score should be a floating-point JSON number"
+        first["score"].is_number() && first["score"].as_i64().is_none(),
+        "score should be encoded as a non-integer JSON number"
     );
 
     let summary: Value =
         serde_json::from_slice(&fs::read(out_dir.join("summary.json")).expect("read summary.json"))
             .expect("parse summary.json");
-    assert!(summary["pass_rate"].as_f64().is_some());
-    assert!(summary["avg_score"].as_f64().is_some());
+    assert!(summary["pass_rate"].is_number() && summary["pass_rate"].as_i64().is_none());
+    assert!(summary["avg_score"].is_number() && summary["avg_score"].as_i64().is_none());
 
     let analysis: Value = serde_json::from_slice(
         &fs::read(out_dir.join("analysis.json")).expect("read analysis.json"),
     )
     .expect("parse analysis.json");
-    assert!(analysis["summary"]["pass_rate"].as_f64().is_some());
+    assert!(
+        analysis["summary"]["pass_rate"].is_number()
+            && analysis["summary"]["pass_rate"].as_i64().is_none()
+    );
 
     let meta_bytes = fs::read(out_dir.join("meta.json")).expect("read meta.json");
     let meta_json: Value = serde_json::from_slice(&meta_bytes).expect("parse meta.json");
