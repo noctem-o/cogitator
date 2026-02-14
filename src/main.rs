@@ -382,10 +382,10 @@ fn run(args: RunArgs) -> Result<()> {
     eval::write_results(&csv_path, &output.results)?;
 
     let results_json_path = args.out_dir.join("results.json");
-    canonical_json::write_json(&results_json_path, &output.results, "results.json")?;
+    write_report_json(&results_json_path, &output.results, "results.json")?;
 
     let summary_json_path = args.out_dir.join("summary.json");
-    canonical_json::write_json(&summary_json_path, &summary, "summary.json")?;
+    write_report_json(&summary_json_path, &summary, "summary.json")?;
 
     let manifest = model::ArtifactManifest {
         meta_json: rel_artifact_path(&args.out_dir, &meta_path),
@@ -418,7 +418,7 @@ fn run(args: RunArgs) -> Result<()> {
     };
 
     let analysis_path = args.out_dir.join("analysis.json");
-    canonical_json::write_json(&analysis_path, &analysis_bundle, "analysis.json")?;
+    write_report_json(&analysis_path, &analysis_bundle, "analysis.json")?;
 
     let tui_enabled = !args.no_tui && cfg!(feature = "tui");
     if tui_enabled {
@@ -465,6 +465,16 @@ fn run(args: RunArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn write_report_json<T: serde::Serialize>(path: &Path, value: &T, label: &str) -> Result<()> {
+    io_utils::write_atomic(path, label, |file| {
+        serde_json::to_writer(&mut *file, value)
+            .with_context(|| format!("failed to serialize {}", label))?;
+        file.write_all(b"\n")
+            .with_context(|| format!("failed to write newline for {}", label))?;
+        Ok(())
+    })
 }
 
 fn demo_cmd(args: DemoArgs) -> Result<()> {
