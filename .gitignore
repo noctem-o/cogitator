@@ -16,3 +16,7 @@ demo_out/
 verify_out*/
 faults_*/
 out_*/
+
+# arXiv submission bundles (keep local, never commit)
+arxiv_submit.zip
+paper_arxiv.zip
