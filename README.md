@@ -21,6 +21,7 @@ same inputs and environment constraints.
 
 - [Why Cogitator](#why-cogitator)
 - [Key capabilities](#key-capabilities)
+- [Fastest on-ramp](#fastest-on-ramp)
 - [Quickstart](#quickstart)
 - [Install prerequisites](#install-prerequisites)
 - [Build and run](#build-and-run)
@@ -63,10 +64,30 @@ validate the same witness root, and pinpoint drift when something changes.
   - Set `COGITATOR_PR_URL` to display a PR link; press `p` to copy it when available.
 
 Agents:
-- `ordeal` — deterministic task-suite agent designed for CI gating and drift diagnostics.
-- `openclaw` — placeholder agent name for expansion.
+- `ordeal` — deterministic CI-gate agent with pinned witness behavior and structured drift diagnostics.
+- `clawdbot` — demo/sandbox agent for general deterministic record/replay runs.
 
 ---
+
+## Fastest on-ramp
+
+If you are new to this repo, run these three commands first:
+
+```bash
+cargo build --release
+./target/release/cogitator demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
+./target/release/cogitator verify --witness demo_out/drift/baseline_faults
+```
+
+PowerShell:
+
+```powershell
+cargo build --release
+.\target\release\cogitator.exe demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
+.\target\release\cogitator.exe verify --witness demo_out\drift\baseline_faults
+```
+
+This proves end-to-end build, deterministic drift demo generation, and witness-bundle verification.
 
 ## Quickstart
 
@@ -205,7 +226,7 @@ For a clean CI-style run (no interactive UI):
 ./target/release/cogitator run --seed 42 --runs 100 --out-dir out
 ```
 
-Useful toggles (exact flags may vary by build):
+Useful toggles:
 
 - `--parallel true|false`
 - `--created-at <string>` (provenance override)
@@ -376,7 +397,7 @@ Use one deterministic command for golden-root drift checks:
 
 ```bash
 ./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt
-# Intentional witness change:
+# Maintainers only (intentional witness changes):
 ./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt --update-golden
 ```
 
@@ -407,7 +428,7 @@ Cogitator is set up for release automation with:
 - A RustSec advisory check via `rustsec/audit-check` (configured by `audit.toml`) as a fail-closed release trust gate.
 - Enforced immutable GitHub Action pinning in CI via `scripts/check_action_pins.sh` (wired as an early `action-pin-policy` job). For protected actions (`actions/checkout`, `actions/upload-artifact`, `actions/attest-build-provenance`, `rustsec/audit-check`), version tags are rejected and only full 40-hex commit SHAs are allowed.
 - Maintainer-only pin refresh utility: `scripts/resolve_action_sha.sh <org/repo> <tag>` (for example: `./scripts/resolve_action_sha.sh rustsec/audit-check v2.0.0`). Resolve tags in a PR and commit the resulting SHA pin; never resolve tags dynamically at CI runtime.
-- GitHub Artifact Attestations (`actions/attest-build-provenance`) for release artifacts produced by `cargo-dist`. `actions/upload-artifact` v6 and `actions/attest-build-provenance` v3 run on Node.js 24, which is supported on current GitHub-hosted runners (`ubuntu-latest`/`macos-latest`) used by this repo.
+- GitHub Artifact Attestations (`actions/attest-build-provenance`) for release artifacts produced by `cargo-dist`, with least-privilege workflow permissions and pinned actions.
 - Release workflow permissions are least-privilege: `contents: write` (required for GitHub Release publishing), `id-token: write` (OIDC), and `attestations: write` (artifact attestations).
 
 ## Nix (optional)

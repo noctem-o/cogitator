@@ -194,8 +194,8 @@ pub struct RunArgs {
     #[arg(
         long,
         group = "agent_mode",
-        value_parser = ["clawdbot", "ordeal", "gauntlet"],
-        help = "Agent name (clawdbot or ordeal; gauntlet is a deprecated alias)"
+        value_parser = ["clawdbot", "ordeal"],
+        help = "Agent name (clawdbot or ordeal)"
     )]
     pub agent: Option<String>,
 
@@ -645,24 +645,13 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-enum AgentSource {
-    Cli,
-    ReplayManifest,
-    Default,
-}
-
 struct AgentSelection {
     name: String,
-    legacy_gauntlet: bool,
-    source: AgentSource,
 }
 
-fn normalize_agent_name(raw: &str) -> Result<(String, bool)> {
+fn normalize_agent_name(raw: &str) -> Result<String> {
     match raw {
-        "clawdbot" => Ok((raw.to_string(), false)),
-        "ordeal" => Ok((raw.to_string(), false)),
-        "gauntlet" => Ok(("ordeal".to_string(), true)),
+        "clawdbot" | "ordeal" => Ok(raw.to_string()),
         _ => anyhow::bail!("unsupported agent: {}", raw),
     }
 }
@@ -675,26 +664,16 @@ fn select_agent_name(
         Vec<agent::AgentTraceEntry>,
     )>,
 ) -> Result<AgentSelection> {
-    let (raw, source) = if let Some(name) = args.agent.as_ref() {
-        (name.clone(), AgentSource::Cli)
+    let raw = if let Some(name) = args.agent.as_ref() {
+        name.clone()
     } else if let Some((manifest, _, _)) = replay_bundle.as_ref() {
-        (manifest.agent.clone(), AgentSource::ReplayManifest)
+        manifest.agent.clone()
     } else {
-        ("clawdbot".to_string(), AgentSource::Default)
+        "clawdbot".to_string()
     };
 
-    let (name, legacy_gauntlet) = normalize_agent_name(&raw)?;
-    Ok(AgentSelection {
-        name,
-        legacy_gauntlet,
-        source,
-    })
-}
-
-fn warn_deprecated_gauntlet(legacy_gauntlet: bool) {
-    if legacy_gauntlet {
-        eprintln!("Warning: agent 'gauntlet' is deprecated; use 'ordeal'.");
-    }
+    let name = normalize_agent_name(&raw)?;
+    Ok(AgentSelection { name })
 }
 
 fn parse_bool_env(value: &str) -> bool {
@@ -705,9 +684,7 @@ fn resolve_ordeal_regress() -> bool {
     if let Ok(value) = std::env::var("COGITATOR_ORDEAL_REGRESS") {
         return parse_bool_env(&value);
     }
-    std::env::var("COGITATOR_GAUNTLET_REGRESS")
-        .map(|value| parse_bool_env(&value))
-        .unwrap_or(false)
+    false
 }
 
 fn run_agent(args: RunArgs) -> Result<()> {
@@ -762,10 +739,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
             .and_then(|file| serde_json::from_reader(file).ok());
 
         let agent_selection = select_agent_name(&args, &replay_bundle)?;
-        warn_deprecated_gauntlet(agent_selection.legacy_gauntlet);
         let agent_name = agent_selection.name.clone();
-        let use_legacy_tasks = agent_selection.legacy_gauntlet
-            && matches!(agent_selection.source, AgentSource::ReplayManifest);
 
         let tui_enabled = !args.no_tui && cfg!(feature = "tui");
 
@@ -829,12 +803,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
             let mut ordeal_issues: Vec<report::DriftIssue> = Vec::new();
 
             if agent_name == "ordeal" {
-                let tasks_path = if use_legacy_tasks {
-                    ordeal::LEGACY_GAUNTLET_TASKS_PATH
-                } else {
-                    ordeal::ORDEAL_TASKS_PATH
-                };
-                let suite = ordeal::TaskSuite::load(Path::new(tasks_path))?;
+                let suite = ordeal::TaskSuite::load(Path::new(ordeal::ORDEAL_TASKS_PATH))?;
                 let regress = resolve_ordeal_regress();
                 let config = ordeal::OrdealConfig {
                     seed: args.seed,
@@ -1571,7 +1540,6 @@ mod tests {
 
     struct EnvRestore {
         new_value: Option<String>,
-        legacy_value: Option<String>,
     }
 
     impl Drop for EnvRestore {
@@ -1579,10 +1547,6 @@ mod tests {
             match self.new_value.as_ref() {
                 Some(value) => std::env::set_var("COGITATOR_ORDEAL_REGRESS", value),
                 None => std::env::remove_var("COGITATOR_ORDEAL_REGRESS"),
-            }
-            match self.legacy_value.as_ref() {
-                Some(value) => std::env::set_var("COGITATOR_GAUNTLET_REGRESS", value),
-                None => std::env::remove_var("COGITATOR_GAUNTLET_REGRESS"),
             }
         }
     }
@@ -1615,37 +1579,25 @@ mod tests {
     }
 
     #[test]
-    fn clap_accepts_gauntlet_agent_alias() {
-        let result = Cli::try_parse_from(["cogitator", "run", "--agent", "gauntlet"]);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn clap_rejects_unknown_agent() {
         let result = Cli::try_parse_from(["cogitator", "run", "--agent", "foo"]);
         assert!(result.is_err());
     }
 
     #[test]
-    fn legacy_gauntlet_regress_env_alias() {
+    fn ordeal_regress_env_is_read() {
         let _guard = env_lock();
         let _restore = EnvRestore {
             new_value: std::env::var("COGITATOR_ORDEAL_REGRESS").ok(),
-            legacy_value: std::env::var("COGITATOR_GAUNTLET_REGRESS").ok(),
         };
 
         std::env::remove_var("COGITATOR_ORDEAL_REGRESS");
-        std::env::remove_var("COGITATOR_GAUNTLET_REGRESS");
         assert!(!resolve_ordeal_regress());
-
-        std::env::set_var("COGITATOR_GAUNTLET_REGRESS", "1");
-        assert!(resolve_ordeal_regress());
 
         std::env::set_var("COGITATOR_ORDEAL_REGRESS", "0");
         assert!(!resolve_ordeal_regress());
 
         std::env::set_var("COGITATOR_ORDEAL_REGRESS", "true");
-        std::env::set_var("COGITATOR_GAUNTLET_REGRESS", "0");
         assert!(resolve_ordeal_regress());
     }
 }

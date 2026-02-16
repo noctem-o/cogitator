@@ -40,34 +40,7 @@ fn to_canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 }
 
 fn normalize_ordeal_tool_name_for_witness(tool_name: &str) -> String {
-    if let Some(suffix) = tool_name.strip_prefix("ordeal.") {
-        format!("gauntlet.{}", suffix)
-    } else {
-        tool_name.to_string()
-    }
-}
-
-fn is_ordealish_entry(entry: &AgentTraceEntry) -> bool {
-    if entry
-        .tool_requests
-        .iter()
-        .any(|r| r.tool_name.starts_with("ordeal.") || r.tool_name.starts_with("gauntlet."))
-    {
-        return true;
-    }
-
-    let haystacks = [&entry.thought, &entry.action];
-    haystacks.iter().any(|s| {
-        s.contains("Ordeal")
-            || s.contains("Gauntlet")
-            || s.contains("ordeal")
-            || s.contains("gauntlet")
-    })
-}
-
-fn normalize_ordeal_text_for_witness(text: &str) -> String {
-    text.replace("Ordeal", "Gauntlet")
-        .replace("ordeal", "gauntlet")
+    tool_name.to_string()
 }
 
 #[derive(Serialize)]
@@ -82,17 +55,8 @@ struct AgentTraceEntryWitness {
 
 impl From<&AgentTraceEntry> for AgentTraceEntryWitness {
     fn from(entry: &AgentTraceEntry) -> Self {
-        let ordealish = is_ordealish_entry(entry);
-        let thought = if ordealish {
-            normalize_ordeal_text_for_witness(&entry.thought)
-        } else {
-            entry.thought.clone()
-        };
-        let action = if ordealish {
-            normalize_ordeal_text_for_witness(&entry.action)
-        } else {
-            entry.action.clone()
-        };
+        let thought = entry.thought.clone();
+        let action = entry.action.clone();
 
         let tool_requests = entry
             .tool_requests

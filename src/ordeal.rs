@@ -14,9 +14,6 @@ use crate::tooling::{ToolRequest, ToolResponse, ToolTranscript};
 /// Relative path to the ordeal task specification (resolved at runtime).
 pub const ORDEAL_TASKS_PATH: &str = "tasks/ordeal.json";
 
-/// Legacy path retained for compatibility with older test suites.
-pub const LEGACY_GAUNTLET_TASKS_PATH: &str = "tasks/gauntlet.json";
-
 /// Fixed number of tasks executed by the ordeal.
 pub const ORDEAL_TASK_COUNT: usize = 50;
 
@@ -274,21 +271,12 @@ pub fn run_ordeal(
     let mut total_rng_calls = 0u64;
     let mut tool_call_idx = 0u32;
 
-    let legacy_naming = suite
-        .tasks
-        .iter()
-        .flat_map(|task| task.steps.iter())
-        .any(|step| step.tool_name.starts_with("gauntlet."));
-
     for (step_index, task) in suite.tasks.iter().enumerate() {
         let step = step_index as u32;
 
         let thought = format!(
             "{} task {}:{} (case {})",
-            if legacy_naming { "Gauntlet" } else { "Ordeal" },
-            task.task_id,
-            task.name,
-            config.case_id
+            "Ordeal", task.task_id, task.name, config.case_id
         );
 
         let action = format!("Execute {} steps", task.steps.len());
@@ -383,11 +371,7 @@ pub fn run_ordeal(
     agent_trace.push(AgentTraceEntry {
         step: suite.tasks.len() as u32,
         role: "assistant".to_string(),
-        thought: format!(
-            "Finalize {} run (passed={}).",
-            if legacy_naming { "gauntlet" } else { "ordeal" },
-            passed
-        ),
+        thought: format!("Finalize {} run (passed={}).", "ordeal", passed),
         action: format!("Score >= {}?", config.pass_threshold_witnessed),
         tool_requests: Vec::new(),
         is_final: true,
@@ -401,25 +385,11 @@ pub fn run_ordeal(
 }
 
 fn normalize_tool_name_for_hash(tool_name: &str) -> String {
-    if let Some(suffix) = tool_name.strip_prefix("ordeal.") {
-        format!("gauntlet.{}", suffix)
-    } else {
-        tool_name.to_string()
-    }
+    tool_name.to_string()
 }
 
 fn normalize_tool_name_for_match(tool_name: &str) -> &str {
-    if let Some(suffix) = tool_name.strip_prefix("ordeal.") {
-        match suffix {
-            "lookup" => "gauntlet.lookup",
-            "search" => "gauntlet.search",
-            "compute" => "gauntlet.compute",
-            "page" => "gauntlet.page",
-            _ => tool_name,
-        }
-    } else {
-        tool_name
-    }
+    tool_name
 }
 
 fn ordeal_stub_response(

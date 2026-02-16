@@ -5,7 +5,6 @@ target/
 
 # Cogitator run artifacts
 out_ci/
-out_gauntlet/
 out_replay/
 out_regress/
 
@@ -20,3 +19,6 @@ out_*/
 # arXiv submission bundles (keep local, never commit)
 arxiv_submit.zip
 paper_arxiv.zip
+
+# local paper build artifacts
+paper_final*.pdf
