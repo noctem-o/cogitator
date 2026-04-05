@@ -7,6 +7,14 @@
    ╚═════╝  ╚═════╝   ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
 ```
 
+## Research Paper
+
+The design and evaluation methodology behind Cogitator is documented in a companion paper:
+
+**[Cogitator: Deterministic Evaluation Harnesses for Auditable Agent Runs](paper/main.pdf)**
+
+The paper covers the cryptographic commitment model (BLAKE3 domain-separated hash chains, JCS/RFC 8785 canonical JSON), witness/provenance split design decisions, deterministic simulation testing (DST) with fault injection, and reproducibility guarantees.
+
 Deterministic evaluation harnesses, cryptographic witness roots, and replayable agent runs.
 
 Cogitator captures full causal traces, records entropy usage (when applicable), and produces
