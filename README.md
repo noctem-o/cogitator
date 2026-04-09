@@ -4,11 +4,12 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/COGITATOR/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/noctem-o/COGITATOR/actions)
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-green.svg?style=flat-square)](LICENSE)
+[![Spec: Apache-2.0](https://img.shields.io/badge/spec-Apache--2.0-blue.svg?style=flat-square)](spec/COGITATOR_WITNESS_PROTOCOL.md)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg?style=flat-square)](https://www.rust-lang.org)
 
-COGITATOR lets you prove what your AI agent did, what it tried to do, and what it was blocked from doing. Every run produces a cryptographic witness root -- a BLAKE3 hash chain over RFC 8785 canonical JSON -- that any third party can recompute independently to verify the record was not altered after the fact. As of v2.0, COGITATOR also intercepts every tool call before dispatch, evaluates it against a declarative policy, and records the decision as an auditable artifact committed into the witness chain.
+COGITATOR lets you prove what your AI agent did, what it tried to do, and what it was blocked from doing. Every run produces a cryptographic witness root -- a BLAKE3 hash chain over RFC 8785 canonical JSON -- that any third party can recompute independently to verify the record was not altered after the fact. As of v2.0, COGITATOR also intercepts every tool call before dispatch, evaluates it against a declarative policy, and records the decision as an auditable artefact committed into the witness chain.
 
-The wire format is specified in [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md) under Apache 2.0 -- free to implement, cite, and build on.
+The wire format is specified in [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md) under Apache 2.0 -- free to implement, cite, and build on independently of this implementation. The protocol has been submitted to the IETF as `draft-noctem-cogitator-witness-protocol-00` and is designed to be carried as a payload inside [SCITT](https://datatracker.ietf.org/wg/scitt/about/) Signed Statements for transparent, timestamped registration on a Transparency Service.
 
 ---
 
@@ -34,7 +35,7 @@ COGITATOR is a direct answer to all three.
                              |  tool_requests
                              v
 +------------------------------------------------------------------+
-|               ToolTranscript::execute()    <-- 2.0 INTERCEPT     |
+|               ToolTranscript::execute()    <-- v2.0 INTERCEPT    |
 |                                                                  |
 |  +-------------------------------------------------------------+ |
 |  |  PolicyEngine::evaluate(request, &CallHistory)              | |
@@ -49,12 +50,12 @@ COGITATOR is a direct answer to all three.
                              |
                              v
 +------------------------------------------------------------------+
-|                    Witness Chain                                  |
+|                      Witness Chain                               |
 |                                                                  |
 |  BLAKE3( RFC-8785-canonical( AgentTrace                          |
 |                            + ToolCalls                           |
-|                            + PhantomEntries   <-- 2.0            |
-|                            + policy_digest    <-- 2.0            |
+|                            + PhantomEntries   <-- v2.0           |
+|                            + policy_digest    <-- v2.0           |
 |                            + WitnessedMetadata ) )               |
 |                                                                  |
 |  -> witness_root.txt  (single hex string, independently verifiable)|
@@ -158,7 +159,7 @@ cargo run -- run --replay out/run_0000
 
 ---
 
-## Artifact layout
+## Artifact Layout
 
 Every agent run emits a self-contained bundle:
 
@@ -174,7 +175,7 @@ out/run_0000/
 +-- witness_root.txt          # Single hex string -- the tamper-evident root
 ```
 
-The `witness_root.txt` is the only value that needs to be published for a third party to verify the entire bundle.
+`witness_root.txt` is the only value that needs to be published for a third party to verify the entire bundle.
 
 ---
 
@@ -206,13 +207,20 @@ COGITATOR takes the position that agent execution should be as auditable as a co
 
 The COGITATOR Witness Protocol is specified as a standalone document under Apache 2.0, separate from this implementation. Anyone is free to implement, cite, or build on the protocol without restriction.
 
-[spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md)
+- **Spec:** [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md)
+- **IETF Internet-Draft:** `draft-noctem-cogitator-witness-protocol-00` (submitted to [IETF SCITT working group](https://datatracker.ietf.org/wg/scitt/about/))
+
+The protocol is designed to be carried as the payload of a SCITT Signed Statement, with the witness root registered on a Transparency Service for an externally verifiable timestamp and proof of inclusion.
 
 ---
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contact
+
+george.g@tuta.io -- questions, regulated deployment enquiries, or if you're working on audit trails for AI agents and want to compare notes.
 
 ## Licence
 
