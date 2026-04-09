@@ -40,26 +40,26 @@ COGITATOR is a direct answer to all three.
 |  +-------------------------------------------------------------+ |
 |  |  PolicyEngine::evaluate(request, &CallHistory)              | |
 |  |                                                             | |
-|  |  Allow   -> dispatch to tool, record ToolCall              | |
-|  |  Block   -> record PhantomEntry(Blocked), return synthetic | |
-|  |  Phantom -> record PhantomEntry(Phantom), return synthetic | |
+|  |  Allow   -> dispatch to tool, record ToolCall               | |
+|  |  Block   -> record PhantomEntry(Blocked), return synthetic  | |
+|  |  Phantom -> record PhantomEntry(Phantom), return synthetic  | |
 |  +-------------------------------------------------------------+ |
 |                                                                  |
 |  CallHistory updated after every verdict (Block counts too)      |
 +----------------------------+-------------------------------------+
                              |
                              v
-+------------------------------------------------------------------+
-|                      Witness Chain                               |
-|                                                                  |
-|  BLAKE3( RFC-8785-canonical( AgentTrace                          |
-|                            + ToolCalls                           |
-|                            + PhantomEntries   <-- v2.0           |
-|                            + policy_digest    <-- v2.0           |
-|                            + WitnessedMetadata ) )               |
-|                                                                  |
-|  -> witness_root.txt  (single hex string, independently verifiable)|
-+------------------------------------------------------------------+
++----------------------------------------------------------------------+
+|                      Witness Chain                                   |
+|                                                                      |
+|  BLAKE3( RFC-8785-canonical( AgentTrace                              |
+|                            + ToolCalls                               |
+|                            + PhantomEntries   <-- v2.0               |
+|                            + policy_digest    <-- v2.0               |
+|                            + WitnessedMetadata ) )                   |
+|                                                                      |
+|  -> witness_root.txt  (single hex string, independently verifiable)  |
++----------------------------------------------------------------------+
 ```
 
 ### Key properties
