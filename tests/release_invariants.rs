@@ -31,9 +31,12 @@ fn canonical_json_matches_expected_bytes() {
     });
 
     let bytes = canonical_json::to_vec(&value).expect("canonical bytes");
+    // RFC 8785 §3.2.2.2: non-ASCII characters MUST be emitted as raw UTF-8,
+    // not as \uXXXX escape sequences. The emoji U+1F600 serialises as the
+    // four-byte UTF-8 sequence for 😀, not as a backslash-u escape.
     assert_eq!(
         String::from_utf8(bytes).expect("utf8"),
-        r#"{"a":{"emoji":"\u{1F600}","x":1},"z":[3,2,1]}"#
+        "{\"a\":{\"emoji\":\"\u{1F600}\",\"x\":1},\"z\":[3,2,1]}"
     );
 }
 
