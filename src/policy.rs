@@ -58,8 +58,9 @@ pub struct PolicyRule {
     pub tool_pattern: String,
     #[serde(default)]
     pub history_tool_pattern: Option<String>,
-    /// Block once the history count reaches this value (inclusive).
-    /// A value of 2 means: allow calls 1 and 2, block call 3 onward.
+    /// Maximum number of calls to allow through before blocking.
+    /// A value of 2 means: allow calls 1, 2, and 3, block call 4 onward.
+    /// Block fires when the history count strictly exceeds this value.
     #[serde(default)]
     pub history_max_calls: Option<usize>,
     pub verdict: PolicyVerdict,
@@ -187,9 +188,10 @@ impl PolicyEngine {
                 (&rule.history_tool_pattern, rule.history_max_calls)
             {
                 let count = history.count_matching(hist_pattern);
-                // Block once the budget is *reached* (count >= max).
-                // Example: max = 2 → calls 1 & 2 are allowed, call 3 is blocked.
-                if count < max {
+                // Allow while the history count is within budget (count <= max).
+                // Block fires when count strictly exceeds max.
+                // Example: max = 2 → calls 1, 2, & 3 are allowed, call 4 is blocked.
+                if count <= max {
                     continue;
                 }
             }
@@ -373,21 +375,26 @@ mod tests {
 
     #[test]
     fn history_guard_triggers_at_budget_boundary() {
-        // max = 2: allow calls 1 & 2, block call 3.
+        // max = 2: allow calls 1, 2, & 3, block call 4.
         let engine = budget_engine(2);
         let mut history = CallHistory::new();
 
-        // Call 1 — allowed.
+        // Call 1 — allowed (count = 0, 0 <= 2).
         let (v, _, _) = engine.evaluate(&req("trade.buy"), &history);
         assert_eq!(v, PolicyVerdict::Allow);
         history.record("trade.buy", PolicyVerdict::Allow);
 
-        // Call 2 — allowed (count = 1, 1 < 2).
+        // Call 2 — allowed (count = 1, 1 <= 2).
         let (v, _, _) = engine.evaluate(&req("trade.sell"), &history);
         assert_eq!(v, PolicyVerdict::Allow);
         history.record("trade.sell", PolicyVerdict::Allow);
 
-        // Call 3 — blocked (count = 2, 2 >= 2).
+        // Call 3 — allowed (count = 2, 2 <= 2).
+        let (v, _, _) = engine.evaluate(&req("trade.buy"), &history);
+        assert_eq!(v, PolicyVerdict::Allow);
+        history.record("trade.buy", PolicyVerdict::Allow);
+
+        // Call 4 — blocked (count = 3, 3 > 2).
         let (v, rule_id, _) = engine.evaluate(&req("trade.buy"), &history);
         assert_eq!(v, PolicyVerdict::Block);
         assert_eq!(rule_id.as_deref(), Some("trade-limit"));
@@ -395,14 +402,21 @@ mod tests {
 
     #[test]
     fn budget_boundary_is_exact() {
-        // max = 1: allow exactly 1 call, block the second.
+        // max = 1: allow calls 1 & 2, block call 3.
         let engine = budget_engine(1);
         let mut history = CallHistory::new();
 
+        // Call 1 — allowed (count = 0, 0 <= 1).
         let (v, _, _) = engine.evaluate(&req("trade.buy"), &history);
         assert_eq!(v, PolicyVerdict::Allow);
         history.record("trade.buy", PolicyVerdict::Allow);
 
+        // Call 2 — allowed (count = 1, 1 <= 1).
+        let (v, _, _) = engine.evaluate(&req("trade.buy"), &history);
+        assert_eq!(v, PolicyVerdict::Allow);
+        history.record("trade.buy", PolicyVerdict::Allow);
+
+        // Call 3 — blocked (count = 2, 2 > 1).
         let (v, _, _) = engine.evaluate(&req("trade.buy"), &history);
         assert_eq!(v, PolicyVerdict::Block);
     }
