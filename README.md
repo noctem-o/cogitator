@@ -8,6 +8,8 @@
 
 COGITATOR lets you prove what your AI agent did, what it tried to do, and what it was blocked from doing. Every run produces a cryptographic witness root -- a BLAKE3 hash chain over RFC 8785 canonical JSON -- that any third party can recompute independently to verify the record was not altered after the fact. As of v2.0, COGITATOR also intercepts every tool call before dispatch, evaluates it against a declarative policy, and records the decision as an auditable artifact committed into the witness chain.
 
+The wire format is specified in [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md) under Apache 2.0 -- free to implement, cite, and build on.
+
 ---
 
 ## The Problem
@@ -200,6 +202,14 @@ COGITATOR takes the position that agent execution should be as auditable as a co
 
 ---
 
+## Protocol Specification
+
+The COGITATOR Witness Protocol is specified as a standalone document under Apache 2.0, separate from this implementation. Anyone is free to implement, cite, or build on the protocol without restriction.
+
+[spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md)
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -207,3 +217,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Licence
 
 Business Source License 1.1. Free for non-production use. Commercial production use requires a licence. Converts to Apache 2.0 on 2029-04-09. See [LICENSE](LICENSE).
+
+The protocol specification at [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md) is separately licenced under Apache 2.0.
