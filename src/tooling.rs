@@ -154,7 +154,8 @@ impl ToolTranscript {
         }
     }
 
-    #[allow(dead_code)]
+    /// Returns the current execution mode. Used in tests to assert Live vs Replay.
+    #[cfg(test)]
     pub fn mode(&self) -> ToolMode {
         self.mode.clone()
     }
@@ -212,7 +213,11 @@ impl ToolTranscript {
             ToolMode::Replay => {
                 debug_assert!(self.chaos.is_none(), "replay must not apply chaos");
 
-                let response = if let Some(expected) = self.expected.get(self.cursor) {
+                // Consolidate to a single borrow so the cursor is read exactly once
+                // for both response derivation and outcome/fault recording.
+                let expected_entry = self.expected.get(self.cursor);
+
+                let response = if let Some(expected) = expected_entry {
                     if expected.step != step {
                         self.mismatches.push(DriftIssue::ToolStepMismatch {
                             index: self.cursor as u32,
@@ -245,7 +250,7 @@ impl ToolTranscript {
                     stub_response(&request)
                 };
 
-                let (outcome, fault) = if let Some(expected) = self.expected.get(self.cursor) {
+                let (outcome, fault) = if let Some(expected) = expected_entry {
                     (expected.outcome.clone(), expected.fault.clone())
                 } else {
                     (outcome_from_response(&response, None), None)
@@ -275,7 +280,9 @@ impl ToolTranscript {
         }
     }
 
-    #[allow(dead_code)]
+    /// Returns the expected entries as a record, if any are present.
+    /// Used in tests to inspect the replay baseline.
+    #[cfg(test)]
     pub fn expected_record(&self) -> Option<ToolTranscriptRecord> {
         if self.expected.is_empty() {
             None

@@ -19,6 +19,7 @@
               pkgs.cargo
               pkgs.rustc
               pkgs.rustfmt
+              pkgs.clippy
             ];
             shellHook = ''
               export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1}
