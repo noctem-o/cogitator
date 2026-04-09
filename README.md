@@ -2,8 +2,9 @@
 
 > **Tamper-evident AI agent audit harness with cryptographic witness chain, pre-call policy interception, and byte-stable replay.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/COGITATOR/ci.yml?branch=main&label=CI)](https://github.com/noctem-o/COGITATOR/actions)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/COGITATOR/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/noctem-o/COGITATOR/actions)
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-green.svg?style=flat-square)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg?style=flat-square)](https://www.rust-lang.org)
 
 COGITATOR lets you prove what your AI agent did, what it tried to do, and what it was blocked from doing. Every run produces a cryptographic witness root -- a BLAKE3 hash chain over RFC 8785 canonical JSON -- that any third party can recompute independently to verify the record was not altered after the fact. As of v2.0, COGITATOR also intercepts every tool call before dispatch, evaluates it against a declarative policy, and records the decision as an auditable artifact committed into the witness chain.
 
@@ -205,4 +206,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+Business Source License 1.1. Free for non-production use. Commercial production use requires a licence. Converts to Apache 2.0 on 2029-04-09. See [LICENSE](LICENSE).
