@@ -190,15 +190,20 @@ fn glob_match_chars(pat: &[char], inp: &[char]) -> bool {
     match (pat, inp) {
         ([], []) => true,
         ([], _) => false,
+        // ** must be checked before * so that trailing ** (e.g. "trade.**") is
+        // not intercepted by the trailing-* arm before the greedy ** arm fires.
+        (['*', '*', rest @ ..], _) => {
+            // ** crosses dot boundaries — match zero or more characters freely.
+            glob_match_chars(rest, inp)
+                || (!inp.is_empty() && glob_match_chars(pat, &inp[1..]))
+        }
+        // Trailing ** already handled above; this arm handles trailing single *.
         ([.., '*'], _) if pat.len() >= 2 && pat[pat.len() - 2] == '*' => {
             glob_match_chars(&pat[..pat.len() - 2], inp)
                 || (!inp.is_empty() && glob_match_chars(pat, &inp[1..]))
         }
-        (['*', '*', rest @ ..], _) => {
-            glob_match_chars(rest, inp)
-                || (!inp.is_empty() && glob_match_chars(pat, &inp[1..]))
-        }
         (['*', rest @ ..], _) => {
+            // Single * does not cross dot boundaries.
             glob_match_chars(rest, inp)
                 || (!inp.is_empty() && inp[0] != '.' && glob_match_chars(pat, &inp[1..]))
         }
