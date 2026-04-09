@@ -189,6 +189,18 @@ COGITATOR takes the position that agent execution should be as auditable as a co
 
 - **EU AI Act compliance** -- Articles 12 and 9 require tamper-evident record-keeping and risk management for high-risk AI systems. COGITATOR provides a ready technical substrate.
 - **Regulated AI deployment** -- Financial regulators (FCA, SEC) and healthcare frameworks (FDA SaMD guidance) are moving toward mandatory audit trails for high-autonomy systems.
+- **Safety-critical robotics** -- The policy layer acts as a capability 
+  firewall: the AI decision system can operate non-deterministically 
+  internally, but cannot dispatch a command outside the pre-approved 
+  operational envelope. Every blocked command is committed into the witness 
+  chain, provably. Directly applicable to surgical robotics, autonomous 
+  vehicles, and industrial automation under IEC 61508.
+
+- **AI liability and insurance** -- Insurers and legal counsel currently 
+  rely on manufacturer-provided logs to reconstruct AI incidents -- an 
+  inherent conflict of interest. The witness root gives any third party an 
+  independent verification path from the same inputs, without trusting the 
+  operator's infrastructure.
 - **AI red-teaming and safety evaluation** -- Security researchers can define capability restrictions via policy, run an agent, and produce a tamper-evident record proving what the agent attempted or was blocked from attempting.
 - **Multi-party AI contracting** -- When an AI agent acts on behalf of a client against a third-party service, both parties can independently verify the same witness root.
 - **Benchmark integrity** -- Public AI benchmarks are vulnerable to cherry-picking and post-hoc result manipulation. COGITATOR's witness root makes benchmark runs independently replayable.
@@ -198,6 +210,11 @@ COGITATOR takes the position that agent execution should be as auditable as a co
 
 - **Multi-agent witness composition** -- Extending the hash chain model to orchestrated multi-agent runs where sub-agent witness roots are nested into a parent root.
 - **Formal policy verification** -- Using the TOML policy grammar as input to a formal model checker to prove policy rules are consistent and non-bypassable.
+- **Formal decision layer verification** -- Replacing probabilistic AI 
+  components in safety-critical deployments with TLA+-specified decision 
+  logic, with COGITATOR providing the audit envelope. This would extend 
+  provable bounded behaviour from the policy layer into the decision layer 
+  itself.
 - **Hardware attestation integration** -- Binding the witness root to a TPM attestation quote for tamper-evidence that extends from software into silicon.
 - **Differential privacy for traces** -- Adding noise-injection mechanisms to agent traces that preserve witness root integrity while reducing privacy leakage from sensitive tool arguments.
 
