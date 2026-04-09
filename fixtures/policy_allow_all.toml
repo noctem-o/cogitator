@@ -1,0 +1,10 @@
+# COGITATOR policy fixture — explicit allow-all
+#
+# An empty rules list is equivalent to allow-all, but having this file
+# on disk is useful when you want a non-empty policy_digest in the
+# witness root while still permitting every tool call.
+#
+# Load with:  cogitator run --agent clawdbot --policy fixtures/policy_allow_all.toml
+
+schema_version = 1
+rules = []

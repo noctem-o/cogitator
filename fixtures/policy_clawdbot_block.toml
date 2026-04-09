@@ -1,0 +1,30 @@
+# COGITATOR policy fixture — clawdbot block-after-budget demo
+#
+# Demonstrates the 2.0 pre-call interception layer.
+# Load with:  cogitator run --agent clawdbot --policy fixtures/policy_clawdbot_block.toml
+#
+# Rules are evaluated top-to-bottom; first match wins.
+# The policy file SHA-256 digest is committed into the witness root,
+# so the exact policy version is cryptographically provable.
+
+schema_version = 1
+
+# Rule 1 — Block any clawdbot.lookup call once more than 1 has already
+# been dispatched this run.  The agent gets a synthetic blocked response;
+# no side-effect occurs and a PhantomEntry is committed into the transcript.
+[[rules]]
+id           = "lookup-budget"
+tool_pattern = "clawdbot.*"
+history_tool_pattern = "clawdbot.*"
+history_max_calls    = 1
+verdict      = "block"
+reason       = "clawdbot tool call budget exceeded (max 1 per run)"
+
+# Rule 2 — Phantom any call to a 'research.*' namespace.
+# The agent believes the call was attempted; COGITATOR records the intent
+# but produces no side-effect.  Useful for observing speculative tool use.
+[[rules]]
+id           = "research-phantom"
+tool_pattern = "research.**"
+verdict      = "phantom"
+reason       = "research tools are observe-only in this policy"

@@ -1,470 +1,209 @@
-```text
-   ██████╗  ██████╗  ██████╗  ██╗████████╗ █████╗ ████████╗ ██████╗ ██████╗
-  ██╔════╝ ██╔═══██╗ ██╔════╝ ██║╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
-  ██║      ██║   ██║ ██║  ███╗██║   ██║   ███████║   ██║   ██║   ██║██████╔╝
-  ██║      ██║   ██║ ██║   ██║██║   ██║   ██╔══██║   ██║   ██║   ██║██╔══██╗
-  ╚██████╗ ╚██████╔╝ ╚██████╔╝██║   ██║   ██║  ██║   ██║   ╚██████╔╝██║  ██║
-   ╚═════╝  ╚═════╝   ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-```
+# COGITATOR
 
-## Research Paper
+> **Cryptographic auditing and pre-call policy interception for AI agent runs.**
 
-The design and evaluation methodology behind Cogitator is documented in a companion paper:
+[![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/COGITATOR/ci.yml?branch=main&label=CI)](https://github.com/noctem-o/COGITATOR/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**[Cogitator: Reproducible Agent-Mode Evaluation](paper/main.pdf)**
-
-The paper covers the cryptographic commitment model (BLAKE3 domain-separated hash chains, JCS/RFC 8785 canonical JSON), witness/provenance split design decisions, deterministic simulation testing (DST) with fault injection, and reproducibility guarantees.
-
-Deterministic evaluation harnesses, cryptographic witness roots, and replayable agent runs.
-
-Cogitator captures full causal traces, records entropy usage (when applicable), and produces
-byte-stable artifacts so third parties can reproduce and verify the same results from the
-same inputs and environment constraints.
-
-![Rust](https://img.shields.io/badge/Rust-stable-orange?style=flat-square&logo=rust&logoColor=white)
-![Deterministic](https://img.shields.io/badge/Deterministic-Yes-4c1?style=flat-square)
-![Witnessed](https://img.shields.io/badge/Witnessed-Yes-6a5acd?style=flat-square)
-
-## Table of contents
-
-- [Why Cogitator](#why-cogitator)
-- [Key capabilities](#key-capabilities)
-- [Fastest on-ramp](#fastest-on-ramp)
-- [Quickstart](#quickstart)
-- [Install prerequisites](#install-prerequisites)
-- [Build and run](#build-and-run)
-- [CLI overview](#cli-overview)
-- [Artifacts and verification](#artifacts-and-verification)
-- [Commitment boundaries](#commitment-boundaries)
-- [Deterministic Simulation Testing (DST)](#deterministic-simulation-testing-dst)
-- [Verification workflow (no Makefile)](#verification-workflow-no-makefile)
-- [Ordeal witness gate in CI](#ordeal-witness-gate-in-ci)
-- [Release engineering](#release-engineering)
-- [Nix (optional)](#nix-optional)
-- [Project layout](#project-layout)
+COGITATOR is a deterministic evaluation harness and **tamper-evident notary** for AI agent execution. Every run produces a cryptographic witness root — a BLAKE3 hash chain over RFC 8785 canonical JSON — that any third party can recompute independently to verify the record was not altered after the fact. As of v2.0, COGITATOR also intercepts every tool call *before* dispatch, evaluating it against a declarative policy and recording the decision as an auditable, signed artifact.
 
 ---
 
-## Why Cogitator
+## The Problem
 
-Auditable agent evaluations should be reproducible by anyone, not just the original operator.
+Modern AI agents are deployed into high-stakes environments — financial trading, medical triage, legal research, critical infrastructure — where they issue tool calls with real-world consequences. The current state of the art offers almost no verifiable answer to the three questions that matter most:
 
-Cogitator makes runs replayable by committing trace events (and, in agent mode, tool-call
-witness views) into a cryptographic witness root. Third parties can re-run the same inputs,
-validate the same witness root, and pinpoint drift when something changes.
+1. **Did the agent do exactly what the log says it did?** Logs are mutable. Post-hoc summaries are reconstructions.
+2. **Was the agent operating within its sanctioned boundaries at the time of the call?** Runtime policy is typically advisory, unenforced, or checked after the fact.
+3. **Can an independent auditor reproduce the same result from the same inputs?** Without deterministic replay, audit is interpretation, not verification.
 
----
-
-## Key capabilities
-
-- **Deterministic execution** with explicit entropy accounting and ordered trace emission.
-- **Parallel evaluation** with stable ordering (threads change throughput, not witness semantics).
-- **Witness roots (BLAKE3)** that commit to every event in a run’s canonical trace.
-- **Deterministic agent mode** with tool transcript recording + replay for byte-stable re-execution.
-- **Drift detection + classification** (tool request/outcome mismatches, count mismatches, and structured blame for `ordeal`).
-- **Witness bundles** that package agent traces, tool transcripts, hash chains, manifests, and per-artifact hashes for offline verification.
-- **Hash-chain auditing** for agent traces and tool calls (separate from the global witness root).
-- **Canonical JSON artifacts** (stable key ordering + formatting) to keep audit outputs byte-stable.
-- **Atomic artifact writes** to avoid partial/corrupt outputs on interruption.
-- **DST-style fault injection** with deterministic chaos profiles and witness-committed schedules.
-- **Witness/provenance split** so runtime details stay out of witness commitments while remaining discoverable.
-- **Optional TUI**: run summary + “agent observatory” views for step timelines and tool-call logs.
-  - Set `COGITATOR_PR_URL` to display a PR link; press `p` to copy it when available.
-
-Agents:
-- `ordeal` — deterministic CI-gate agent with pinned witness behavior and structured drift diagnostics.
-- `clawdbot` — demo/sandbox agent for general deterministic record/replay runs.
+COGITATOR is a direct answer to all three.
 
 ---
 
-## Fastest on-ramp
+## Architecture
 
-If you are new to this repo, run these three commands first:
-
-```bash
-cargo build --release
-./target/release/cogitator demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
-./target/release/cogitator verify --witness demo_out/drift/baseline_faults
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                          Agent Loop                              │
+│   AgentInput → Agent::step() → AgentOutput (tool_requests)      │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │  tool_requests
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│               ToolTranscript::execute()    ◄── 2.0 INTERCEPT     │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  PolicyEngine::evaluate(request, &CallHistory)          │    │
+│  │                                                         │    │
+│  │  Allow  → dispatch to tool, record ToolCall             │    │
+│  │  Block  → record PhantomEntry(Blocked), return synthetic│    │
+│  │  Phantom→ record PhantomEntry(Phantom), return synthetic│    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  CallHistory updated after every verdict (Block counts too)      │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    Witness Chain                                  │
+│                                                                  │
+│  BLAKE3( RFC-8785-canonical( AgentTrace                          │
+│                            + ToolCalls                           │
+│                            + PhantomEntries   ◄── 2.0            │
+│                            + policy_digest    ◄── 2.0            │
+│                            + WitnessedMetadata ) )               │
+│                                                                  │
+│  → witness_root.txt  (single hex string, independently verifiable)│
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-PowerShell:
+### Key properties
 
-```powershell
-cargo build --release
-.\target\release\cogitator.exe demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
-.\target\release\cogitator.exe verify --witness demo_out\drift\baseline_faults
-```
-
-This proves end-to-end build, deterministic drift demo generation, and witness-bundle verification.
-
-## Quickstart
-
-Build:
-
-```bash
-cargo build --release
-```
-
-Run a deterministic evaluation:
-
-```bash
-./target/release/cogitator run --seed 42 --runs 10 --out-dir out --clean
-```
-
-Verify the witness root:
-
-```bash
-./target/release/cogitator verify \
-  --meta out/meta.json \
-  --trace out/trace.jsonl \
-  --expect "$(cat out/witness_root.txt)"
-```
-
-PowerShell equivalent (native Windows builds use `.exe` and backslashes):
-
-```powershell
-.\target\release\cogitator.exe run --seed 42 --runs 10 --out-dir out --clean
-.\target\release\cogitator.exe verify --meta out\meta.json --trace out\trace.jsonl --expect (Get-Content out\witness_root.txt).Trim()
-```
-
-Optional TUI build:
-
-```bash
-cargo build --release --features tui
-```
-
-Launch with neon cockpit styling (or `cyan`/`mono`) and explicit no-color mode:
-
-```bash
-./target/release/cogitator run --agent ordeal --runs 1 --theme neon
-./target/release/cogitator run --agent ordeal --runs 1 --theme cyan --no-color
-```
+| Property | How it is achieved |
+|---|---|
+| **Tamper-evidence** | BLAKE3 hash chain over RFC 8785 canonical JSON; any mutation changes the witness root |
+| **Deterministic replay** | Fixed seed + chaos profile + policy file → identical witness root |
+| **Pre-call interception** | `PolicyEngine::evaluate` runs *before* any tool dispatch |
+| **Policy auditability** | SHA-256 digest of the policy file is committed into the witness root |
+| **Blocked-call provability** | `PhantomEntry` records every blocked/phantomed call; committed into the chain |
+| **Chaos fault injection** | Timeout / drop / corrupt / latency faults, seeded and reproducible |
+| **Nix reproducibility** | `nix_provenance.json` captures the closed Nix store path used to build the binary |
 
 ---
 
-## Install prerequisites
+## v2.0 — Pre-Call Policy Interception
 
-### Linux (Debian/Ubuntu)
+v2.0 adds a **policy layer** between the agent's intent and tool execution. It is declarative, TOML-defined, and zero-config (absent = allow-all).
 
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential curl git
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+### Policy file format
+
+```toml
+# policy.toml
+schema_version = 1
+
+# Block any financial tool call after more than 2 have been dispatched this run.
+[[rules]]
+id           = "trade-budget"
+tool_pattern = "trade.*"
+history_tool_pattern = "trade.*"
+history_max_calls    = 2
+verdict      = "block"
+reason       = "trade call budget exceeded"
+
+# Observe-only: record the agent's intent to call research tools, but do not
+# dispatch them. The agent receives a synthetic response.
+[[rules]]
+id           = "research-phantom"
+tool_pattern = "research.**"
+verdict      = "phantom"
+reason       = "research tools are observe-only"
 ```
 
-### Linux (Fedora/RHEL)
+Rules are evaluated top-to-bottom; the first match wins. An empty rules list (or a missing file) is equivalent to allow-all — no policy overhead for basic usage.
 
-```bash
-sudo dnf install -y gcc gcc-c++ make curl git
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+### Verdicts
+
+| Verdict | Tool dispatched? | Agent sees | Witness chain |
+|---|---|---|---|
+| `allow` | ✅ Yes | Real outcome | `ToolCall` entry |
+| `block` | ❌ No | `{ blocked: true, reason: "..." }` | `PhantomEntry(Blocked)` |
+| `phantom` | ❌ No | `{ blocked: true, reason: "..." }` | `PhantomEntry(Phantom)` |
+
+### History guards
+
+Rules can condition on cumulative call history within a run:
+
+```toml
+[[rules]]
+id                   = "llm-budget"
+tool_pattern         = "llm_generate"
+history_tool_pattern = "llm_generate"
+history_max_calls    = 5
+verdict              = "block"
+reason               = "LLM call budget exceeded"
 ```
 
-### Linux (Arch)
+The `CallHistory` is updated after every verdict (blocked calls count against the budget), preventing circumvention by interleaving allowed calls.
+
+---
+
+## Quick Start
 
 ```bash
-sudo pacman -S --needed base-devel curl git
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Linux (NixOS)
-
-If you have flakes enabled:
-
-```bash
+# Enter the reproducible dev shell (requires Nix with flakes)
 nix develop
-```
 
-Without flakes:
+# Run CI checks (fmt → clippy → test)
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
 
-```bash
-nix-shell -p rustc cargo rustfmt
-```
+# Run the ordeal golden gate
+cargo run -- ordeal check
 
-### macOS
+# Run a single agent evaluation with policy enforcement
+cargo run -- run --agent clawdbot --policy fixtures/policy_clawdbot_block.toml
 
-```bash
-xcode-select --install
-brew install rustup git
-rustup-init
-```
+# Verify a prior run's witness root
+cargo run -- verify --recompute-witness-root --witness out/run_0000 \
+  --expect <witness_root_hex>
 
-### Windows
-
-**Option A: Native Windows**
-
-1. Install the Visual Studio Build Tools.
-2. Install Rust via rustup.
-3. Open a new PowerShell and verify:
-
-```powershell
-rustc --version
-cargo --version
-```
-
-**Option B: WSL2 (recommended for a Linux-like workflow)**
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential curl git
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Replay a prior run and check for drift
+cargo run -- run --replay out/run_0000
 ```
 
 ---
 
-## Build and run
+## Artifact layout
 
-```bash
-cargo build --release
-./target/release/cogitator --help
+Every agent run emits a self-contained bundle:
+
+```
+out/run_0000/
+├── agent_trace.json          # Every agent step: inputs, tool requests, outputs
+├── tool_transcript.json      # Every tool call (real + phantom) with outcomes
+├── chaos_profile.json        # Fault injection schedule (seeded, reproducible)
+├── drift_report.json         # Replay mismatch report (empty if no drift)
+├── hash_chain.txt            # Per-call BLAKE3 hashes
+├── meta.json                 # Witnessed metadata (seed, policy_digest, ...)
+├── witness_manifest.json     # Cross-file artifact hashes + bundle hash
+└── witness_root.txt          # Single hex string — the tamper-evident root
 ```
 
-For a clean CI-style run (no interactive UI):
-
-```bash
-./target/release/cogitator run --seed 42 --runs 100000 --out-dir out --clean --no-tui
-```
+The `witness_root.txt` is the only value that needs to be published for a third party to verify the entire bundle.
 
 ---
 
-## CLI overview
+## Research & Commercialisation Context
 
-### Run deterministic evaluations
+### Why this matters now
 
-```bash
-./target/release/cogitator run --seed 42 --runs 100 --out-dir out
-```
+AI agents are being deployed in regulated industries (financial services, healthcare, legal) without any standardised mechanism for proving that the agent behaved as claimed. Existing approaches — log ingestion, RAG-based audit tools, model cards — are all reconstructive: they describe what *probably* happened, not what *provably* happened.
 
-Useful toggles:
+COGITATOR takes the position that **agent execution should be as auditable as a compiled binary in a reproducible build system.** The witness root is the runtime equivalent of a Nix store path: a cryptographic commitment that ties a specific output to a specific, verifiable execution.
 
-- `--parallel true|false`
-- `--created-at <string>` (provenance override)
-- `--nix-provenance auto|on|off` (provenance only)
+### Target applications
 
-### Run agent mode (record)
+- **Regulated AI deployment** — Financial regulators (FCA, SEC) and healthcare frameworks (EU AI Act, FDA SaMD guidance) are moving toward mandatory audit trails for high-autonomy systems. COGITATOR provides a ready technical substrate.
+- **AI red-teaming and safety evaluation** — Security researchers can use the policy layer to define capability restrictions, run an agent, and produce a tamper-evident record proving the agent attempted (or did not attempt) to circumvent them.
+- **Multi-party AI contracting** — When an AI agent acts on behalf of a client against a third-party service, both parties can independently verify the same witness root.
+- **Benchmark integrity** — Public AI benchmarks are vulnerable to cherry-picking and post-hoc result manipulation. COGITATOR's witness root makes benchmark runs independently replayable.
+- **Model-level compliance testing** — Organisations deploying frontier models can run COGITATOR as a CI gate: if the witness root for a given policy file drifts, the deployment is blocked.
 
-```bash
-./target/release/cogitator run --agent ordeal --runs 1 --out-dir out --clean
-```
+### Research directions
 
-### Run agent mode (replay)
-
-```bash
-./target/release/cogitator run \
-  --agent ordeal \
-  --case 0 \
-  --replay out/run_0000 \
-  --out-dir replay \
-  --clean
-```
-
-Agent/replay-only toggles:
-
-- `--threads <n>` (affects throughput only; recorded in provenance)
-- `--faults on|off`
-- `--fault-profile none|ci|stress`
-- `--fault-timeout-rate <f64>`, `--fault-drop-rate <f64>`, `--fault-corrupt-rate <f64>`, `--fault-latency-rate <f64>`
-- `--llm on|off`, `--llm-model <name>`, `--llm-seed <u64>`
-- `--pass-threshold <string>` (ordeal uses a canonical string in witnessed metadata)
-
-### Demo drift
-
-Runs a baseline and then a perturbed scenario, emitting a drift report you can verify:
-
-```bash
-./target/release/cogitator demo drift --seed 1 --threads 2 --fault-profile ci --out-dir demo_out --clean
-./target/release/cogitator verify --witness demo_out/drift/baseline_faults
-./target/release/cogitator verify --witness demo_out/drift/baseline_faults --recompute-witness-root
-```
+- **Multi-agent witness composition** — Extending the hash chain model to orchestrated multi-agent runs where sub-agent witness roots are nested into a parent root.
+- **Formal policy verification** — Using the TOML policy grammar as input to a formal model checker to prove policy rules are consistent and non-bypassable.
+- **Hardware attestation integration** — Binding the witness root to a TPM attestation quote for tamper-evidence that extends from software into silicon.
+- **Differential privacy for traces** — Adding noise-injection mechanisms to agent traces that preserve witness root integrity while reducing privacy leakage from sensitive tool arguments.
 
 ---
 
-## Artifacts and verification
+## Contributing
 
-A typical output layout looks like:
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```text
-out/
-├── analysis.json
-├── meta.json
-├── nix_provenance.json
-├── results.csv
-├── results.json
-├── summary.json
-├── trace.jsonl
-├── witness_root.txt
-└── run_0000/
-    ├── agent_trace.json
-    ├── chaos_profile.json
-    ├── drift_report.json
-    ├── hash_chain.txt
-    ├── tool_transcript.json
-    ├── witness_root.txt
-    ├── witness_manifest.json
-    └── verify_report.json            (written by `verify --witness <dir>`)
-```
+## Licence
 
-**Artifact highlights**
-
-- `meta.json` – run metadata (witnessed + provenance)
-- `trace.jsonl` – canonical trace events (NDJSON: one JSON object per line; strict JSON parser rejects duplicate keys and non-integer numbers)
-- `results.csv` / `results.json` – case-level results (`results.json` uses standard JSON serialization; non-witnessed)
-- `summary.json` – aggregate metrics (standard JSON; non-witnessed)
-- `analysis.json` – bundled metadata + summary + results (standard JSON; non-witnessed)
-- `witness_root.txt` – witness root for the run
-- `run_0000/*` – agent witness bundle (trace + tool transcript + drift + hashes)
-
-Notes:
-- `verify` expects `trace.jsonl` (NDJSON). `agent_trace.json` is not accepted by `verify`.
-- In agent mode, the bundle directory is the unit of verification.
-
----
-
-## Commitment boundaries
-
-Cogitator draws a strict line between what is **witnessed** and what is **provenance**:
-
-- **Witness root** commits to RFC 8785-style canonical JSON (JCS key ordering) over a strict I-JSON subset (integers only) for trace entries plus (in agent mode) agent trace entries and tool-call witness views in deterministic order.
-  Simulated latency and runtime environment details are excluded.
-  Tool-call commitments are computed from explicit witness-view types (not full transcript structs), so provenance-only fields cannot be accidentally pulled into witnessed bytes.
-- **Report artifacts** (`results.json`, `summary.json`, `analysis.json`) use standard JSON serialization, are explicitly non-witnessed, and are not committed to `witness_root`.
-  JSON cannot represent `NaN`/`Infinity`, so report metrics must remain finite.
-- **Provenance metadata** captures run-time context (timestamps, toolchain versions, agent thread count, Rayon thread resolution, platform notes, optional Nix details) and is **not** part of the witness root.
-- **Bundle hash** covers all artifacts listed in `witness_manifest.json` (including optional provenance artifacts) for offline verification.
-
-Witness roots are stable across hardware and thread counts; environment details belong to provenance, not the witness commitment.
-
----
-
-## Deterministic Simulation Testing (DST)
-
-Cogitator can deterministically inject tool faults (timeouts, corruptions, drops, and latency simulations).
-
-Faults are driven by a seeded schedule and recorded in tool transcripts so that record + replay is byte-stable.
-Simulated latency may be exposed to the agent but is excluded from witness commitments by default.
-
-Example:
-
-```bash
-./target/release/cogitator run \
-  --agent ordeal \
-  --case 0 \
-  --faults on \
-  --fault-profile stress \
-  --fault-timeout-rate 0.01 \
-  --fault-corrupt-rate 0.001 \
-  --fault-drop-rate 0.001
-```
-
----
-
-## Verification workflow (no Makefile)
-
-### Non-agent runs
-
-```bash
-./target/release/cogitator run --seed 1 --runs 10 --out-dir out --clean
-./target/release/cogitator verify \
-  --meta out/meta.json \
-  --trace out/trace.jsonl \
-  --expect "$(cat out/witness_root.txt)"
-```
-
-### Agent record → replay
-
-```bash
-./target/release/cogitator run --agent ordeal --runs 1 --out-dir out --clean
-
-./target/release/cogitator run \
-  --agent ordeal \
-  --case 0 \
-  --replay out/run_0000 \
-  --out-dir replay \
-  --clean
-
-./target/release/cogitator verify --witness out/run_0000
-```
-
-`verify --witness <dir>` verifies:
-- `witness_manifest.json` bundle hash + per-artifact hashes
-- witness-root consistency
-- drift report integrity (and writes `verify_report.json` into the bundle directory)
-
-Use semantic witness recompute mode to validate the committed root against bundle semantics:
-
-```bash
-./target/release/cogitator verify --witness out/run_0000 --recompute-witness-root
-```
-
-On mismatch, Cogitator prints expected vs computed root and a committed-component hint.
-
----
-
-## Ordeal witness gate in CI
-
-Use one deterministic command for golden-root drift checks:
-
-```bash
-./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt
-# Maintainers only (intentional witness changes):
-./target/release/cogitator ordeal check --golden goldens/ordeal_witness_root.txt --update-golden
-```
-
-
-Cogitator includes a minimal `ordeal` agent case designed as a pinned CI gate.
-It keeps CI costs low while still asserting a stable end-to-end witness bundle.
-
-Run the same check locally:
-
-```bash
-scripts/check_ordeal_root.sh
-```
-
-The script compares the generated witness root with the golden value in
-`goldens/ordeal_witness_root.txt` and prints drift diagnostics on mismatch.
-
----
-
-
-## Release engineering
-
-Cogitator is set up for release automation with:
-
-- `cargo-dist` metadata in `Cargo.toml` and a tag-triggered GitHub Action (`.github/workflows/release.yml`) for release artifacts/installers, with a pinned `CARGO_DIST_VERSION` and installer fetched from cargo-dist GitHub Releases (not crates.io).
-- `git-cliff` configuration in `cliff.toml` for changelog generation from commit history.
-- `--version` / `--help` including git SHA metadata when available at build time, with a deterministic `unknown` fallback when `git` metadata is unavailable.
-- CI gates for format, clippy, tests, determinism smoke checks, verify-recompute checks, release dry-runs (`cargo dist build --artifacts=global`), and a true no-git build gate (no `.git/` and no `git` on `PATH`) to keep release builds robust outside a git checkout.
-- A RustSec advisory check via `rustsec/audit-check` (configured by `audit.toml`) as a fail-closed release trust gate.
-- Enforced immutable GitHub Action pinning in CI via `scripts/check_action_pins.sh` (wired as an early `action-pin-policy` job). For protected actions (`actions/checkout`, `actions/upload-artifact`, `actions/attest-build-provenance`, `rustsec/audit-check`), version tags are rejected and only full 40-hex commit SHAs are allowed.
-- Maintainer-only pin refresh utility: `scripts/resolve_action_sha.sh <org/repo> <tag>` (for example: `./scripts/resolve_action_sha.sh rustsec/audit-check v2.0.0`). Resolve tags in a PR and commit the resulting SHA pin; never resolve tags dynamically at CI runtime.
-- GitHub Artifact Attestations (`actions/attest-build-provenance`) for release artifacts produced by `cargo-dist`, with least-privilege workflow permissions and pinned actions.
-- Release workflow permissions are least-privilege: `contents: write` (required for GitHub Release publishing), `id-token: write` (OIDC), and `attestations: write` (artifact attestations).
-
-## Nix (optional)
-
-Cogitator remains fully functional without Nix.
-
-If you use Nix, a dev shell is provided:
-
-```bash
-nix develop
-```
-
-Nix metadata is captured as **provenance only** and never alters witness roots.
-On native Windows builds, `--nix-provenance=auto` may resolve to “off (windows)” while still recording the resolution in provenance.
-When `RAYON_NUM_THREADS` is set, Cogitator records both the requested env value and the resolved Rayon thread count in provenance only; this aids reproducibility notes without changing witness semantics.
-
-For deterministic `created_at`, set `SOURCE_DATE_EPOCH` (the dev shell may do this automatically).
-
----
-
-## Project layout
-
-```text
-.
-├── src/            # Rust source
-├── tests/          # Test suite
-├── schemas/        # JSON schemas for artifacts
-├── scripts/        # helper scripts (CI gates, local checks)
-├── goldens/        # pinned witness roots for CI
-└── README.md
-```
+MIT. See [LICENSE](LICENSE).
