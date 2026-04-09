@@ -175,41 +175,66 @@ impl PolicyEngine {
 }
 
 // ─── Glob matching ──────────────────────────────────────────────────────────
+//
+// Rules:
+//   *   matches one or more characters within a single dot-separated segment
+//       (will not consume a '.')
+//   **  matches any sequence of characters including '.' (crosses segment
+//       boundaries), matching zero or more characters
+//   any other character matches literally
 
 fn tool_name_matches(pattern: &str, tool_name: &str) -> bool {
     glob_match(pattern, tool_name)
 }
 
+/// Iterative glob match using backtracking via explicit stacks.
+/// Avoids fragile recursive slice-pattern arms.
 fn glob_match(pattern: &str, input: &str) -> bool {
-    let pattern: Vec<char> = pattern.chars().collect();
-    let input: Vec<char> = input.chars().collect();
-    glob_match_chars(&pattern, &input)
-}
+    let pat: Vec<char> = pattern.chars().collect();
+    let inp: Vec<char> = input.chars().collect();
 
-fn glob_match_chars(pat: &[char], inp: &[char]) -> bool {
-    match (pat, inp) {
-        ([], []) => true,
-        ([], _) => false,
-        // ** must be checked before * so that trailing ** (e.g. "trade.**") is
-        // not intercepted by the trailing-* arm before the greedy ** arm fires.
-        (['*', '*', rest @ ..], _) => {
-            // ** crosses dot boundaries — match zero or more characters freely.
-            glob_match_chars(rest, inp)
-                || (!inp.is_empty() && glob_match_chars(pat, &inp[1..]))
+    // dp(pi, ii) — can pat[pi..] match inp[ii..]?
+    // Use an explicit stack of (pi, ii) states to explore rather than recursion.
+    // We deduplicate visited states to avoid exponential blowup.
+    let mut stack: Vec<(usize, usize)> = vec![(0, 0)];
+    let mut visited = std::collections::HashSet::new();
+
+    while let Some((pi, ii)) = stack.pop() {
+        if !visited.insert((pi, ii)) {
+            continue;
         }
-        // Trailing ** already handled above; this arm handles trailing single *.
-        ([.., '*'], _) if pat.len() >= 2 && pat[pat.len() - 2] == '*' => {
-            glob_match_chars(&pat[..pat.len() - 2], inp)
-                || (!inp.is_empty() && glob_match_chars(pat, &inp[1..]))
+
+        if pi == pat.len() {
+            if ii == inp.len() {
+                return true;
+            }
+            continue;
         }
-        (['*', rest @ ..], _) => {
-            // Single * does not cross dot boundaries.
-            glob_match_chars(rest, inp)
-                || (!inp.is_empty() && inp[0] != '.' && glob_match_chars(pat, &inp[1..]))
+
+        let pc = pat[pi];
+
+        if pi + 1 < pat.len() && pc == '*' && pat[pi + 1] == '*' {
+            // ** — greedy wildcard, crosses dots. Try matching zero chars
+            // (skip **) or consume one input char and stay on **.
+            stack.push((pi + 2, ii));              // skip ** entirely
+            if ii < inp.len() {
+                stack.push((pi, ii + 1));          // consume one char, stay on **
+            }
+        } else if pc == '*' {
+            // Single * — matches any char except '.'
+            stack.push((pi + 1, ii));              // skip * (match zero chars)
+            if ii < inp.len() && inp[ii] != '.' {
+                stack.push((pi, ii + 1));          // consume one non-dot char, stay on *
+            }
+        } else {
+            // Literal character match
+            if ii < inp.len() && inp[ii] == pc {
+                stack.push((pi + 1, ii + 1));
+            }
         }
-        ([p, pr @ ..], [i, ir @ ..]) if p == i => glob_match_chars(pr, ir),
-        _ => false,
     }
+
+    false
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
