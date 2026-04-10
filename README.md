@@ -11,7 +11,7 @@ COGITATOR lets you prove what your AI agent did, what it tried to do, and what i
 
 The wire format is specified in [spec/COGITATOR_WITNESS_PROTOCOL.md](spec/COGITATOR_WITNESS_PROTOCOL.md) under Apache 2.0 -- free to implement, cite, and build on independently of this implementation. The protocol has been submitted to the IETF as an independent submission (`draft-noctem-cogitator-witness-protocol-00`) and is designed to be carried as a payload inside [SCITT](https://datatracker.ietf.org/wg/scitt/about/) Signed Statements for transparent, timestamped registration on a Transparency Service.
 
-Complementary paper: https://github.com/noctem-o/COGITATOR/blob/main/main.pdf
+Complementary paper for detail on 1.0.0 architecture: https://github.com/noctem-o/COGITATOR/blob/main/main.pdf
 ---
 
 ## The Problem
