@@ -17,7 +17,7 @@
 
 -----
 
-> 📄 **[Companion paper](https://github.com/noctem-o/COGITATOR/blob/main/paper/main.pdf)** covers the cryptographic commitment model (BLAKE3 domain-separated hash chains, JCS/RFC 8785 canonical JSON), the witness/provenance split, DST fault-injection design, and reproducibility guarantees. It documents the v1.0 architecture; v2.0 builds pre-call policy interception on top of that foundation.
+📄 Companion paper covers the cryptographic commitment model (BLAKE3 domain-separated hash chains, JCS/RFC 8785 canonical JSON), the witness/provenance split, DST fault-injection design, and reproducibility guarantees. It documents the v1.0 architecture; v2.0 builds pre-call policy
 
 -----
 
