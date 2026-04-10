@@ -1,1 +1,694 @@
+<!DOCTYPE html>
 
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COGITATOR — Verifiable AI Agent Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0f0f0e;
+    --paper: #f5f2ec;
+    --rule: #c8c2b4;
+    --accent: #1a3a2a;
+    --accent-light: #2d5a3f;
+    --red: #8b1a1a;
+    --mono: #3a3530;
+    --fade: #7a7468;
+  }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+background: var(–paper);
+color: var(–ink);
+font-family: ‘DM Sans’, sans-serif;
+font-weight: 300;
+line-height: 1.7;
+-webkit-font-smoothing: antialiased;
+}
+
+/* –– HEADER –– */
+header {
+border-bottom: 1px solid var(–rule);
+padding: 2rem 0 0;
+position: relative;
+overflow: hidden;
+}
+
+.header-inner {
+max-width: 860px;
+margin: 0 auto;
+padding: 0 2rem;
+}
+
+.wordmark {
+font-family: ‘DM Mono’, monospace;
+font-size: 0.75rem;
+font-weight: 500;
+letter-spacing: 0.25em;
+color: var(–fade);
+text-transform: uppercase;
+margin-bottom: 3rem;
+display: flex;
+align-items: center;
+gap: 1rem;
+}
+
+.wordmark::after {
+content: ‘’;
+flex: 1;
+height: 1px;
+background: var(–rule);
+}
+
+h1 {
+font-family: ‘DM Serif Display’, serif;
+font-size: clamp(2.8rem, 6vw, 4.5rem);
+font-weight: 400;
+line-height: 1.08;
+letter-spacing: -0.02em;
+color: var(–ink);
+max-width: 720px;
+margin-bottom: 2rem;
+}
+
+h1 em {
+font-style: italic;
+color: var(–accent);
+}
+
+.lede {
+font-size: 1.15rem;
+color: var(–fade);
+max-width: 560px;
+margin-bottom: 3rem;
+font-weight: 300;
+line-height: 1.65;
+}
+
+.header-rule {
+border: none;
+border-top: 1px solid var(–rule);
+margin: 0;
+}
+
+/* –– NAV STRIP –– */
+.nav-strip {
+max-width: 860px;
+margin: 0 auto;
+padding: 0.9rem 2rem;
+display: flex;
+gap: 2rem;
+font-family: ‘DM Mono’, monospace;
+font-size: 0.7rem;
+letter-spacing: 0.12em;
+color: var(–fade);
+text-transform: uppercase;
+border-bottom: 1px solid var(–rule);
+flex-wrap: wrap;
+}
+
+/* –– MAIN –– */
+main {
+max-width: 860px;
+margin: 0 auto;
+padding: 0 2rem 6rem;
+}
+
+/* –– PROBLEM BLOCK –– */
+.problem {
+padding: 4rem 0 3.5rem;
+border-bottom: 1px solid var(–rule);
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.section-label {
+font-family: ‘DM Mono’, monospace;
+font-size: 0.68rem;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–fade);
+padding-top: 0.35rem;
+position: sticky;
+top: 2rem;
+}
+
+.problem-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 1.5rem;
+color: var(–ink);
+}
+
+.problem-body p {
+color: var(–mono);
+margin-bottom: 1.2rem;
+font-size: 1rem;
+}
+
+.pull-quote {
+border-left: 2px solid var(–red);
+padding: 1rem 1.5rem;
+margin: 2rem 0;
+font-family: ‘DM Serif Display’, serif;
+font-style: italic;
+font-size: 1.15rem;
+color: var(–ink);
+line-height: 1.5;
+background: rgba(139,26,26,0.03);
+}
+
+/* –– SOLUTION BLOCK –– */
+.solution {
+padding: 4rem 0 3.5rem;
+border-bottom: 1px solid var(–rule);
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.solution-body p {
+color: var(–mono);
+margin-bottom: 1.2rem;
+font-size: 1rem;
+}
+
+.solution-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 1.5rem;
+color: var(–ink);
+}
+
+.three-proofs {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 1px;
+background: var(–rule);
+border: 1px solid var(–rule);
+margin: 2.5rem 0;
+}
+
+.proof-cell {
+background: var(–paper);
+padding: 1.4rem 1.2rem;
+}
+
+.proof-num {
+font-family: ‘DM Mono’, monospace;
+font-size: 0.65rem;
+letter-spacing: 0.15em;
+color: var(–fade);
+margin-bottom: 0.6rem;
+}
+
+.proof-cell p {
+font-size: 0.9rem !important;
+color: var(–mono) !important;
+margin: 0 !important;
+line-height: 1.5;
+}
+
+.proof-cell strong {
+display: block;
+font-family: ‘DM Sans’, sans-serif;
+font-weight: 500;
+color: var(–ink);
+font-size: 0.92rem;
+margin-bottom: 0.3rem;
+}
+
+/* –– BENEFITS –– */
+.benefits {
+padding: 4rem 0 3.5rem;
+border-bottom: 1px solid var(–rule);
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.benefits-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 2rem;
+color: var(–ink);
+}
+
+.benefit-list {
+list-style: none;
+display: flex;
+flex-direction: column;
+gap: 0;
+}
+
+.benefit-list li {
+display: grid;
+grid-template-columns: 180px 1fr;
+gap: 1.5rem;
+padding: 1.2rem 0;
+border-bottom: 1px solid var(–rule);
+align-items: start;
+}
+
+.benefit-list li:last-child {
+border-bottom: none;
+}
+
+.benefit-tag {
+font-family: ‘DM Sans’, sans-serif;
+font-weight: 500;
+font-size: 0.9rem;
+color: var(–accent);
+padding-top: 0.1rem;
+}
+
+.benefit-desc {
+font-size: 0.95rem;
+color: var(–mono);
+line-height: 1.6;
+}
+
+/* –– AUDIENCE –– */
+.audience {
+padding: 4rem 0 3.5rem;
+border-bottom: 1px solid var(–rule);
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.audience-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 2rem;
+color: var(–ink);
+}
+
+.audience-grid {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 1px;
+background: var(–rule);
+border: 1px solid var(–rule);
+}
+
+.audience-cell {
+background: var(–paper);
+padding: 1.4rem 1.3rem;
+}
+
+.audience-cell .role {
+font-weight: 500;
+font-size: 0.9rem;
+color: var(–ink);
+margin-bottom: 0.35rem;
+}
+
+.audience-cell .role-desc {
+font-size: 0.88rem;
+color: var(–fade);
+line-height: 1.5;
+}
+
+/* –– REGULATORY –– */
+.regulatory {
+padding: 4rem 0 3.5rem;
+border-bottom: 1px solid var(–rule);
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.regulatory-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 1.5rem;
+color: var(–ink);
+}
+
+.reg-table {
+width: 100%;
+border-collapse: collapse;
+font-size: 0.9rem;
+}
+
+.reg-table th {
+font-family: ‘DM Mono’, monospace;
+font-size: 0.65rem;
+letter-spacing: 0.15em;
+text-transform: uppercase;
+color: var(–fade);
+font-weight: 500;
+text-align: left;
+padding: 0 1rem 0.8rem 0;
+border-bottom: 1px solid var(–rule);
+}
+
+.reg-table td {
+padding: 0.9rem 1rem 0.9rem 0;
+border-bottom: 1px solid var(–rule);
+vertical-align: top;
+color: var(–mono);
+line-height: 1.5;
+}
+
+.reg-table td:first-child {
+font-weight: 500;
+color: var(–ink);
+white-space: nowrap;
+font-size: 0.88rem;
+}
+
+.reg-table tr:last-child td { border-bottom: none; }
+
+/* –– FOOTER / CTA –– */
+.cta {
+padding: 4rem 0 2rem;
+display: grid;
+grid-template-columns: 1fr 2fr;
+gap: 3rem;
+align-items: start;
+}
+
+.cta-body h2 {
+font-family: ‘DM Serif Display’, serif;
+font-size: 1.9rem;
+font-weight: 400;
+line-height: 1.2;
+letter-spacing: -0.01em;
+margin-bottom: 1.2rem;
+color: var(–ink);
+}
+
+.cta-body p {
+font-size: 0.95rem;
+color: var(–mono);
+margin-bottom: 1.5rem;
+line-height: 1.6;
+}
+
+.licence-note {
+font-family: ‘DM Mono’, monospace;
+font-size: 0.75rem;
+color: var(–fade);
+line-height: 1.7;
+padding: 1.2rem;
+border: 1px solid var(–rule);
+background: rgba(0,0,0,0.02);
+margin-bottom: 1.5rem;
+}
+
+.contact-link {
+display: inline-block;
+font-family: ‘DM Mono’, monospace;
+font-size: 0.8rem;
+color: var(–accent);
+letter-spacing: 0.05em;
+text-decoration: none;
+border-bottom: 1px solid var(–accent-light);
+padding-bottom: 0.1rem;
+transition: opacity 0.15s;
+}
+
+.contact-link:hover { opacity: 0.65; }
+
+.github-link {
+display: inline-block;
+margin-top: 1rem;
+font-family: ‘DM Mono’, monospace;
+font-size: 0.75rem;
+color: var(–fade);
+text-decoration: none;
+letter-spacing: 0.06em;
+border-bottom: 1px solid var(–rule);
+padding-bottom: 0.1rem;
+transition: color 0.15s;
+}
+
+.github-link:hover { color: var(–ink); }
+
+/* –– ANIMATIONS –– */
+@keyframes fadeUp {
+from { opacity: 0; transform: translateY(18px); }
+to   { opacity: 1; transform: translateY(0); }
+}
+
+header .wordmark  { animation: fadeUp 0.5s ease both; }
+header h1         { animation: fadeUp 0.6s 0.1s ease both; }
+header .lede      { animation: fadeUp 0.6s 0.2s ease both; }
+
+/* –– RESPONSIVE –– */
+@media (max-width: 640px) {
+.problem, .solution, .benefits, .audience, .regulatory, .cta {
+grid-template-columns: 1fr;
+gap: 1.5rem;
+}
+.section-label { position: static; }
+.three-proofs  { grid-template-columns: 1fr; }
+.audience-grid { grid-template-columns: 1fr; }
+.benefit-list li { grid-template-columns: 1fr; gap: 0.3rem; }
+h1 { font-size: 2.4rem; }
+}
+</style>
+
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="wordmark">COGITATOR</div>
+    <h1>Can you <em>prove</em> what your AI agent did?</h1>
+    <p class="lede">
+      A tamper-evident audit layer for AI agents. Cryptographic proof of what your agent did, tried to do, and was blocked from doing — independently verifiable by any third party.
+    </p>
+  </div>
+  <hr class="header-rule">
+  <nav class="nav-strip">
+    <span>The Problem</span>
+    <span>What It Does</span>
+    <span>What You Get</span>
+    <span>Regulatory Alignment</span>
+    <span>Licensing</span>
+  </nav>
+</header>
+
+<main>
+
+  <!-- PROBLEM -->
+
+  <section class="problem">
+    <div class="section-label">The Problem</div>
+    <div class="problem-body">
+      <h2>Regulated AI needs more than a log file.</h2>
+      <p>
+        AI agents are already operating in financial services, healthcare, and legal workflows. When something goes wrong — a bad trade, a missed diagnostic flag, a contract clause the agent should not have touched — your organisation faces a question it currently cannot answer.
+      </p>
+      <div class="pull-quote">
+        "Can you prove the agent did exactly what you say it did, and nothing it was not supposed to?"
+      </div>
+      <p>
+        Existing audit logs are mutable. Post-hoc summaries are reconstructions. There is no standard way for a regulator, an insurer, or a counterparty to independently verify your account of what your AI actually did.
+      </p>
+      <p>
+        This is not a gap most teams notice until they are sitting across from a regulator or a claims adjuster. By then, the only evidence available is the operator's own logs — an inherent conflict of interest.
+      </p>
+    </div>
+  </section>
+
+  <!-- SOLUTION -->
+
+  <section class="solution">
+    <div class="section-label">What It Does</div>
+    <div class="solution-body">
+      <h2>A cryptographic record that anyone can verify.</h2>
+      <p>
+        COGITATOR wraps around an AI agent and produces a cryptographic witness root — a single tamper-evident fingerprint — after every run. Any third party can recompute that fingerprint from the same inputs and confirm the record was never altered after the fact.
+      </p>
+      <p>
+        Before any tool call is dispatched, COGITATOR checks it against a declarative policy file. Allowed calls are executed and recorded. Blocked calls are also recorded — proving not just what the agent did, but what it tried to do and was prevented from doing.
+      </p>
+      <p>
+        The result is a self-contained, independently verifiable bundle: every agent step, every tool call, every policy decision, sealed cryptographically.
+      </p>
+
+```
+  <div class="three-proofs">
+    <div class="proof-cell">
+      <div class="proof-num">01</div>
+      <strong>What it did</strong>
+      <p>Every action taken, recorded in a tamper-evident chain.</p>
+    </div>
+    <div class="proof-cell">
+      <div class="proof-num">02</div>
+      <strong>What it tried</strong>
+      <p>Every blocked call recorded, not just permitted ones.</p>
+    </div>
+    <div class="proof-cell">
+      <div class="proof-num">03</div>
+      <strong>What was prevented</strong>
+      <p>Policy decisions committed into the audit record, before dispatch.</p>
+    </div>
+  </div>
+</div>
+```
+
+  </section>
+
+  <!-- BENEFITS -->
+
+  <section class="benefits">
+    <div class="section-label">What You Get</div>
+    <div class="benefits-body">
+      <h2>Built for audit, procurement, and legal scrutiny.</h2>
+      <ul class="benefit-list">
+        <li>
+          <span class="benefit-tag">Regulatory evidence</span>
+          <span class="benefit-desc">A concrete artifact satisfying EU AI Act Articles 12 and 9 tamper-evident record-keeping requirements, and aligned with FCA, SEC, and FDA SaMD audit trail expectations.</span>
+        </li>
+        <li>
+          <span class="benefit-tag">Independent verification</span>
+          <span class="benefit-desc">No need to trust operator infrastructure. Any auditor, regulator, or counterparty can rerun the verification themselves from the same inputs.</span>
+        </li>
+        <li>
+          <span class="benefit-tag">Pre-call control</span>
+          <span class="benefit-desc">A policy layer that enforces operational boundaries before side effects happen — not after. The agent cannot reach outside its sanctioned envelope.</span>
+        </li>
+        <li>
+          <span class="benefit-tag">Byte-stable replay</span>
+          <span class="benefit-desc">Any prior run can be re-executed from the same inputs and will produce the identical cryptographic fingerprint. Reproducibility is not a claim — it is a verifiable property.</span>
+        </li>
+        <li>
+          <span class="benefit-tag">Liability clarity</span>
+          <span class="benefit-desc">In the event of a dispute, both parties work from the same verifiable record. Not competing log extracts. Not operator-provided summaries.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- AUDIENCE -->
+
+  <section class="audience">
+    <div class="section-label">Who It Is For</div>
+    <div class="audience-body">
+      <h2>Across the organisation and across the table.</h2>
+      <div class="audience-grid">
+        <div class="audience-cell">
+          <div class="role">Chief Compliance Officers</div>
+          <div class="role-desc">Preparing for EU AI Act obligations and demonstrating tamper-evident record-keeping to regulators.</div>
+        </div>
+        <div class="audience-cell">
+          <div class="role">CTOs in Regulated Industries</div>
+          <div class="role-desc">Deploying AI into workflows that require provable auditability, not just logging.</div>
+        </div>
+        <div class="audience-cell">
+          <div class="role">Risk and Insurance Teams</div>
+          <div class="role-desc">Underwriting AI liability with a verifiable record both parties can rely on independently.</div>
+        </div>
+        <div class="audience-cell">
+          <div class="role">Legal Counsel</div>
+          <div class="role-desc">Establishing a clear, third-party-verifiable account of agent behaviour before a dispute arises.</div>
+        </div>
+        <div class="audience-cell">
+          <div class="role">Procurement Leads</div>
+          <div class="role-desc">Evaluating AI vendors against audit and compliance requirements with a concrete technical standard.</div>
+        </div>
+        <div class="audience-cell">
+          <div class="role">Safety and Red-Team Functions</div>
+          <div class="role-desc">Evaluating agent behaviour under controlled conditions with a tamper-evident record of what was attempted.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REGULATORY -->
+
+  <section class="regulatory">
+    <div class="section-label">Regulatory Alignment</div>
+    <div class="regulatory-body">
+      <h2>Designed against real regulatory requirements.</h2>
+      <table class="reg-table">
+        <thead>
+          <tr>
+            <th>Framework</th>
+            <th>Requirement addressed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>EU AI Act</td>
+            <td>Articles 12 and 9 — tamper-evident record-keeping and risk management systems for high-risk AI.</td>
+          </tr>
+          <tr>
+            <td>FCA / SEC</td>
+            <td>Mandatory audit trails for high-autonomy AI systems acting in financial markets.</td>
+          </tr>
+          <tr>
+            <td>FDA SaMD</td>
+            <td>Software as a Medical Device audit trail guidance — verifiable record of AI decision steps.</td>
+          </tr>
+          <tr>
+            <td>IEC 61508</td>
+            <td>Safety-critical systems — policy layer as a capability firewall with committed evidence of blocked commands.</td>
+          </tr>
+          <tr>
+            <td>IETF / SCITT</td>
+            <td>The underlying witness protocol has been submitted as an IETF Internet-Draft and is designed to be carried as a SCITT Signed Statement for transparent, timestamped registration.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- CTA -->
+
+  <section class="cta">
+    <div class="section-label">Licensing</div>
+    <div class="cta-body">
+      <h2>Start with evaluation. Deploy with confidence.</h2>
+      <p>
+        COGITATOR is free for non-production use — research, compliance evaluation, and audit testing. Commercial production deployment requires a licence. The underlying protocol specification is open under Apache 2.0 and free to implement independently.
+      </p>
+      <div class="licence-note">
+        IMPLEMENTATION — Business Source License 1.1. Converts to Apache 2.0 on 2029-04-09.<br>
+        PROTOCOL SPEC — Apache 2.0. Free to implement, cite, and build on.
+      </div>
+      <p>
+        Regulated deployment enquiries, procurement questions, and compliance assessment support are welcome directly.
+      </p>
+      <a class="contact-link" href="mailto:george.g@tuta.io">george.g@tuta.io</a>
+      <br>
+      <a class="github-link" href="https://github.com/noctem-o/COGITATOR" target="_blank">github.com/noctem-o/COGITATOR</a>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
