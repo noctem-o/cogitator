@@ -225,27 +225,6 @@ fn recompute_rejects_duplicate_manifest_keys() {
 }
 
 #[test]
-fn recompute_accepts_manifest_paths_already_prefixed_with_bundle_dir() {
-    let temp = tempdir().expect("tempdir");
-    write_bundle(temp.path(), base_call()).expect("bundle");
-
-    let manifest_path = temp.path().join("witness_manifest.json");
-    let mut manifest: WitnessManifest =
-        serde_json::from_slice(&fs::read(&manifest_path).expect("read manifest")).expect("parse");
-    let prefix = temp.path().display().to_string();
-    manifest.meta_json = format!("{prefix}/meta.json");
-    manifest.agent_trace_json = format!("{prefix}/agent_trace.json");
-    manifest.tool_transcript_json = format!("{prefix}/tool_transcript.json");
-    manifest.witness_root_txt = Some(format!("{prefix}/witness_root.txt"));
-    canonical_json::write_json(&manifest_path, &manifest, "witness_manifest.json")
-        .expect("rewrite manifest");
-
-    let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
-        .expect("recompute succeeds");
-    assert!(receipt.matched);
-}
-
-#[test]
 fn recompute_detects_phantom_entry_tamper() {
     let temp = tempdir().expect("tempdir");
     write_bundle(temp.path(), base_call()).expect("bundle");

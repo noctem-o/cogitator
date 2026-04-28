@@ -27,13 +27,16 @@ fn resolve_replay_artifact_path(
     label: &str,
 ) -> Result<PathBuf> {
     let raw = Path::new(manifest_path);
+    if raw.is_absolute() {
+        anyhow::bail!(
+            "{} path must be relative to replay bundle dir, got absolute path: {}",
+            label,
+            manifest_path
+        );
+    }
 
     let replay_root = canonicalize_existing(replay_dir, "replay directory")?;
-    let candidate = if raw.is_absolute() || raw.exists() {
-        raw.to_path_buf()
-    } else {
-        replay_dir.join(raw)
-    };
+    let candidate = replay_dir.join(raw);
     let candidate_canonical = canonicalize_existing(&candidate, label)?;
     if !candidate_canonical.starts_with(&replay_root) {
         anyhow::bail!("{} escapes replay bundle dir: {}", label, manifest_path);
@@ -1714,32 +1717,5 @@ mod tests {
             resolve_replay_artifact_path(bundle.path(), "agent_trace.json", "agent_trace.json")
                 .expect("resolve inside bundle");
         assert!(resolved.ends_with("agent_trace.json"));
-    }
-
-    #[test]
-    fn replay_artifact_resolution_accepts_existing_bundle_rooted_relative_path() {
-        struct CwdRestore(std::path::PathBuf);
-        impl Drop for CwdRestore {
-            fn drop(&mut self) {
-                let _ = std::env::set_current_dir(&self.0);
-            }
-        }
-
-        let bundle_parent = tempdir().expect("parent");
-        let replay_dir = bundle_parent.path().join("run_0000");
-        std::fs::create_dir_all(&replay_dir).expect("create replay dir");
-        let artifact = replay_dir.join("tool_transcript.json");
-        std::fs::write(&artifact, b"{}").expect("write artifact");
-
-        let _cwd_restore = CwdRestore(std::env::current_dir().expect("cwd"));
-        std::env::set_current_dir(bundle_parent.path()).expect("chdir parent");
-        let resolved =
-            resolve_replay_artifact_path(&replay_dir, "run_0000/tool_transcript.json", "artifact")
-                .expect("resolve existing bundle-rooted relative path");
-
-        assert_eq!(
-            resolved,
-            std::fs::canonicalize(&artifact).expect("canonicalize artifact")
-        );
     }
 }
