@@ -63,6 +63,7 @@ impl Palette {
 }
 
 #[cfg(feature = "tui")]
+#[allow(clippy::too_many_arguments)]
 pub fn launch(
     theme: &str,
     no_color: bool,
@@ -249,6 +250,7 @@ pub fn launch(
 }
 
 #[cfg(feature = "tui")]
+#[allow(clippy::too_many_arguments)]
 pub fn launch_agent(
     theme: &str,
     no_color: bool,
