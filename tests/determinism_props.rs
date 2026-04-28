@@ -35,7 +35,7 @@ fn witness_root_for_agent(
     agent_trace: &[AgentTraceEntry],
     tool_calls: &[ToolCall],
 ) -> String {
-    trace::compute_agent_witness_root(metadata, agent_trace, tool_calls)
+    trace::compute_agent_witness_root(metadata, agent_trace, tool_calls, &[])
         .expect("agent witness root")
 }
 
@@ -469,8 +469,13 @@ fn agent_witness_root_invariant_across_thread_counts() {
                     }
 
                     let record = transcript.into_record();
-                    trace::compute_agent_witness_root(&metadata, &agent_trace, &record.entries)
-                        .expect("root")
+                    trace::compute_agent_witness_root(
+                        &metadata,
+                        &agent_trace,
+                        &record.entries,
+                        &record.phantom_entries,
+                    )
+                    .expect("root")
                 })
         })
         .collect();

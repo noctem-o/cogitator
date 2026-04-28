@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::agent::AgentTraceEntry;
 use crate::canonical_json;
 use crate::model::{RunMetadata, TraceEvent, WitnessedMetadata};
-use crate::tooling::{ToolCall, ToolOutcome, ToolRequest, TranscriptFault};
+use crate::tooling::{PhantomEntry, ToolCall, ToolOutcome, ToolRequest, TranscriptFault};
 use crate::witness;
 
 #[allow(dead_code)]
@@ -28,6 +28,10 @@ pub fn encode_agent_trace_entry(entry: &AgentTraceEntry) -> Result<Vec<u8>> {
 
 pub fn encode_tool_call_witness(call: &ToolCallWitnessView) -> Result<Vec<u8>> {
     to_canonical_json(call)
+}
+
+pub fn encode_phantom_entry_witness(entry: &PhantomEntryWitnessView) -> Result<Vec<u8>> {
+    to_canonical_json(entry)
 }
 
 #[allow(dead_code)]
@@ -123,6 +127,38 @@ pub fn tool_call_witness_view(call: &ToolCall) -> ToolCallWitnessView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PhantomEntryWitnessView {
+    step: u32,
+    tool_call_idx: u32,
+    tool_name: String,
+    request: serde_json::Value,
+    disposition: crate::policy::PhantomDisposition,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rule_id: Option<String>,
+    reason: String,
+}
+
+impl PhantomEntryWitnessView {
+    pub fn tool_call_idx(&self) -> u32 {
+        self.tool_call_idx
+    }
+}
+
+impl From<&PhantomEntry> for PhantomEntryWitnessView {
+    fn from(entry: &PhantomEntry) -> Self {
+        Self {
+            step: entry.step,
+            tool_call_idx: entry.tool_call_idx,
+            tool_name: normalize_ordeal_tool_name_for_witness(&entry.tool_name),
+            request: entry.request.clone(),
+            disposition: entry.disposition.clone(),
+            rule_id: entry.rule_id.clone(),
+            reason: entry.reason.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum TranscriptFaultWitnessView {
     Timeout { domain: String },
@@ -167,21 +203,30 @@ pub fn compute_agent_witness_root(
     metadata: &WitnessedMetadata,
     agent_trace: &[AgentTraceEntry],
     tool_calls: &[ToolCall],
+    phantom_entries: &[PhantomEntry],
 ) -> Result<String> {
     let metadata_bytes = encode_witnessed_metadata(metadata)?;
     let mut witness = witness::Witness::new(&metadata_bytes)?;
-    let mut calls_by_step = index_tool_calls_by_step(tool_calls);
-    for calls in calls_by_step.values_mut() {
-        calls.sort_by_key(|call| call.tool_call_idx);
+    let mut ops_by_step = index_tool_ops_by_step(tool_calls, phantom_entries);
+    for ops in ops_by_step.values_mut() {
+        ops.sort_by_key(|op| op.tool_call_idx());
     }
 
     for entry in agent_trace {
         let entry_bytes = encode_agent_trace_entry(entry)?;
         witness.update(&entry_bytes)?;
-        if let Some(calls) = calls_by_step.get_mut(&entry.step) {
-            for call in calls.iter() {
-                let call_bytes = encode_tool_call_witness(call)?;
-                witness.update(&call_bytes)?;
+        if let Some(ops) = ops_by_step.get(&entry.step) {
+            for op in ops {
+                match op {
+                    ToolOpWitnessView::Executed(call) => {
+                        let call_bytes = encode_tool_call_witness(call)?;
+                        witness.update(&call_bytes)?;
+                    }
+                    ToolOpWitnessView::Intercepted(phantom) => {
+                        let phantom_bytes = encode_phantom_entry_witness(phantom)?;
+                        witness.update(&phantom_bytes)?;
+                    }
+                }
             }
         }
     }
@@ -195,6 +240,40 @@ pub fn index_tool_calls_by_step(tool_calls: &[ToolCall]) -> HashMap<u32, Vec<Too
         map.entry(call.step)
             .or_default()
             .push(tool_call_witness_view(call));
+    }
+    map
+}
+
+pub enum ToolOpWitnessView {
+    Executed(ToolCallWitnessView),
+    Intercepted(PhantomEntryWitnessView),
+}
+
+impl ToolOpWitnessView {
+    pub fn tool_call_idx(&self) -> u32 {
+        match self {
+            ToolOpWitnessView::Executed(call) => call.tool_call_idx(),
+            ToolOpWitnessView::Intercepted(entry) => entry.tool_call_idx(),
+        }
+    }
+}
+
+pub fn index_tool_ops_by_step(
+    tool_calls: &[ToolCall],
+    phantom_entries: &[PhantomEntry],
+) -> HashMap<u32, Vec<ToolOpWitnessView>> {
+    let mut map: HashMap<u32, Vec<ToolOpWitnessView>> = HashMap::new();
+    for call in tool_calls {
+        map.entry(call.step)
+            .or_default()
+            .push(ToolOpWitnessView::Executed(tool_call_witness_view(call)));
+    }
+    for entry in phantom_entries {
+        map.entry(entry.step)
+            .or_default()
+            .push(ToolOpWitnessView::Intercepted(
+                PhantomEntryWitnessView::from(entry),
+            ));
     }
     map
 }

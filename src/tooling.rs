@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -421,10 +421,7 @@ impl ToolTranscript {
 // ─── I/O ────────────────────────────────────────────────────────────────────────
 
 pub fn read_transcript(path: &Path) -> Result<ToolTranscriptRecord> {
-    let file = std::fs::File::open(path).with_context(|| "failed to open tool transcript")?;
-    let record: ToolTranscriptRecord =
-        serde_json::from_reader(file).with_context(|| "failed to parse tool transcript")?;
-    Ok(record)
+    crate::strict_json::from_path(path, "tool transcript")
 }
 
 pub fn write_transcript(path: &Path, record: &ToolTranscriptRecord) -> Result<()> {
