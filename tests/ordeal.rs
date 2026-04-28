@@ -42,8 +42,13 @@ fn run_ordeal_root(seed: u64, pass_threshold: &str) -> String {
         )),
         ..Default::default()
     };
-    trace::compute_agent_witness_root(&metadata, &output.agent_trace, &record.entries)
-        .expect("witness root")
+    trace::compute_agent_witness_root(
+        &metadata,
+        &output.agent_trace,
+        &record.entries,
+        &record.phantom_entries,
+    )
+    .expect("witness root")
 }
 
 #[test]

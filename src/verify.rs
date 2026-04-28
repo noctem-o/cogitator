@@ -7,8 +7,9 @@ use crate::agent::AgentTraceEntry;
 use crate::model::{RunMetadata, TraceEvent, WitnessManifest, TRACE_SCHEMA_VERSION};
 use crate::tooling::ToolTranscriptRecord;
 use crate::trace::{
-    compute_agent_witness_root, encode_agent_trace_entry, encode_event, encode_tool_call_witness,
-    encode_witnessed_metadata, index_tool_calls_by_step,
+    compute_agent_witness_root, encode_agent_trace_entry, encode_event,
+    encode_phantom_entry_witness, encode_tool_call_witness, encode_witnessed_metadata,
+    index_tool_calls_by_step, index_tool_ops_by_step, ToolOpWitnessView,
 };
 use crate::witness::Witness;
 
@@ -180,8 +181,12 @@ pub fn recompute_agent_witness_root_from_bundle(
         )
     };
 
-    let computed =
-        compute_agent_witness_root(&metadata.witnessed, &agent_trace, &transcript.entries)?;
+    let computed = compute_agent_witness_root(
+        &metadata.witnessed,
+        &agent_trace,
+        &transcript.entries,
+        &transcript.phantom_entries,
+    )?;
 
     let differing_component = if computed == expected {
         None
@@ -204,8 +209,12 @@ fn detect_agent_witness_component_diff(
 ) -> Result<Option<String>> {
     let metadata_bytes = encode_witnessed_metadata(witnessed)?;
     let mut calls_by_step = index_tool_calls_by_step(&transcript.entries);
+    let mut ops_by_step = index_tool_ops_by_step(&transcript.entries, &transcript.phantom_entries);
     for calls in calls_by_step.values_mut() {
         calls.sort_by_key(|call| call.tool_call_idx());
+    }
+    for ops in ops_by_step.values_mut() {
+        ops.sort_by_key(|op| op.tool_call_idx());
     }
 
     let witness_metadata_only = Witness::new(&metadata_bytes)?;
@@ -229,12 +238,33 @@ fn detect_agent_witness_component_diff(
     }
     let toolcalls_only = witness_toolcalls_only.finalize_hex();
 
+    let mut witness_interceptions_only = Witness::new(&metadata_bytes)?;
+    let mut ordered_steps_intercepted: Vec<u32> = ops_by_step.keys().copied().collect();
+    ordered_steps_intercepted.sort_unstable();
+    for step in ordered_steps_intercepted {
+        if let Some(ops) = ops_by_step.get(&step) {
+            for op in ops {
+                if let ToolOpWitnessView::Intercepted(entry) = op {
+                    witness_interceptions_only.update(&encode_phantom_entry_witness(entry)?)?;
+                }
+            }
+        }
+    }
+    let interceptions_only = witness_interceptions_only.finalize_hex();
+
     let mut witness_full = Witness::new(&metadata_bytes)?;
     for entry in agent_trace {
         witness_full.update(&encode_agent_trace_entry(entry)?)?;
-        if let Some(calls) = calls_by_step.get_mut(&entry.step) {
-            for call in calls.iter() {
-                witness_full.update(&encode_tool_call_witness(call)?)?;
+        if let Some(ops) = ops_by_step.get(&entry.step) {
+            for op in ops {
+                match op {
+                    ToolOpWitnessView::Executed(call) => {
+                        witness_full.update(&encode_tool_call_witness(call)?)?;
+                    }
+                    ToolOpWitnessView::Intercepted(entry) => {
+                        witness_full.update(&encode_phantom_entry_witness(entry)?)?;
+                    }
+                }
             }
         }
     }
@@ -242,14 +272,14 @@ fn detect_agent_witness_component_diff(
 
     let first_hint = if metadata_only != trace_only {
         "trace stream differs first"
-    } else if trace_only != toolcalls_only {
+    } else if trace_only != toolcalls_only || interceptions_only != toolcalls_only {
         "tool-call witness stream differs first"
     } else {
         "combined semantic stream differs"
     };
 
     Ok(Some(format!(
-        "semantic recompute mismatch; metadata_only={} trace_only={} toolcalls_only={} full_semantic={} first_differing_component={}",
-        metadata_only, trace_only, toolcalls_only, full, first_hint
+        "semantic recompute mismatch; metadata_only={} trace_only={} toolcalls_only={} interceptions_only={} full_semantic={} first_differing_component={}",
+        metadata_only, trace_only, toolcalls_only, interceptions_only, full, first_hint
     )))
 }

@@ -16,6 +16,35 @@ fn rel_artifact_path(out_dir: &Path, path: &Path) -> String {
         .into_owned()
 }
 
+fn canonicalize_existing(path: &Path, label: &str) -> Result<PathBuf> {
+    std::fs::canonicalize(path)
+        .with_context(|| format!("failed to canonicalize {label}: {}", path.display()))
+}
+
+fn resolve_replay_artifact_path(
+    replay_dir: &Path,
+    manifest_path: &str,
+    label: &str,
+) -> Result<PathBuf> {
+    let raw = Path::new(manifest_path);
+    if raw.is_absolute() {
+        anyhow::bail!(
+            "{} path must be relative to replay bundle dir, got absolute path: {}",
+            label,
+            manifest_path
+        );
+    }
+
+    let replay_root = canonicalize_existing(replay_dir, "replay directory")?;
+    let candidate = replay_dir.join(raw);
+    let candidate_canonical = canonicalize_existing(&candidate, label)?;
+    if !candidate_canonical.starts_with(&replay_root) {
+        anyhow::bail!("{} escapes replay bundle dir: {}", label, manifest_path);
+    }
+
+    Ok(candidate_canonical)
+}
+
 mod agent;
 mod canonical_json;
 mod chaos;
@@ -575,6 +604,7 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
                 &demo_run.metadata.witnessed,
                 &demo_run.agent_trace,
                 &demo_run.transcript.entries,
+                &demo_run.transcript.phantom_entries,
             )?;
             let witness_root_path = scenario_dir.join("witness_root.txt");
             io_utils::write_atomic_string(
@@ -752,26 +782,39 @@ fn run_agent(args: RunArgs) -> Result<()> {
 
         let replay_bundle = if let Some(replay_dir) = args.replay.as_ref() {
             let manifest_path = replay_dir.join("witness_manifest.json");
-            let manifest_file = File::open(&manifest_path)
-                .with_context(|| "failed to open witness_manifest.json")?;
-            let manifest: model::WitnessManifest = serde_json::from_reader(manifest_file)
-                .with_context(|| "failed to parse witness_manifest.json")?;
-            let transcript = tooling::read_transcript(Path::new(&manifest.tool_transcript_json))?;
-            let agent_trace_file = File::open(&manifest.agent_trace_json)
-                .with_context(|| "failed to open agent_trace.json")?;
+            let manifest: model::WitnessManifest =
+                strict_json::from_path(&manifest_path, "witness_manifest.json")?;
+            let transcript_path = resolve_replay_artifact_path(
+                replay_dir,
+                &manifest.tool_transcript_json,
+                "tool_transcript.json",
+            )?;
+            let transcript = tooling::read_transcript(&transcript_path)?;
+            let agent_trace_path = resolve_replay_artifact_path(
+                replay_dir,
+                &manifest.agent_trace_json,
+                "agent_trace.json",
+            )?;
             let agent_trace: Vec<agent::AgentTraceEntry> =
-                serde_json::from_reader(agent_trace_file)
-                    .with_context(|| "failed to parse agent_trace.json")?;
+                strict_json::from_path(&agent_trace_path, "agent_trace.json")?;
             Some((manifest, transcript, agent_trace))
         } else {
             None
         };
 
-        let replay_chaos_profile = replay_bundle
-            .as_ref()
-            .and_then(|(manifest, _, _)| manifest.chaos_profile_json.as_ref())
-            .and_then(|path| File::open(path).ok())
-            .and_then(|file| serde_json::from_reader(file).ok());
+        let replay_chaos_profile = if let Some((manifest, _, _)) = replay_bundle.as_ref() {
+            if let (Some(replay_dir), Some(path)) =
+                (args.replay.as_ref(), manifest.chaos_profile_json.as_deref())
+            {
+                let resolved =
+                    resolve_replay_artifact_path(replay_dir, path, "chaos_profile.json")?;
+                Some(strict_json::from_path(&resolved, "chaos_profile.json")?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let agent_selection = select_agent_name(&args, &replay_bundle)?;
         let agent_name = agent_selection.name.clone();
@@ -912,6 +955,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
                 &metadata.witnessed,
                 &agent_trace,
                 &transcript_record.entries,
+                &transcript_record.phantom_entries,
             )?;
             let agent_witness_path = run_dir.join("witness_root.txt");
             io_utils::write_atomic_string(
@@ -1204,8 +1248,9 @@ fn compute_agent_witness_root(
     metadata: &model::WitnessedMetadata,
     agent_trace: &[agent::AgentTraceEntry],
     tool_calls: &[tooling::ToolCall],
+    phantom_entries: &[tooling::PhantomEntry],
 ) -> Result<String> {
-    trace::compute_agent_witness_root(metadata, agent_trace, tool_calls)
+    trace::compute_agent_witness_root(metadata, agent_trace, tool_calls, phantom_entries)
 }
 
 fn build_metadata(
@@ -1571,9 +1616,10 @@ fn read_trimmed(path: &Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_ordeal_regress, Cli};
+    use super::{resolve_ordeal_regress, resolve_replay_artifact_path, Cli};
     use clap::Parser;
     use std::sync::{Mutex, OnceLock};
+    use tempfile::tempdir;
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -1644,5 +1690,32 @@ mod tests {
 
         std::env::set_var("COGITATOR_ORDEAL_REGRESS", "true");
         assert!(resolve_ordeal_regress());
+    }
+
+    #[test]
+    fn replay_artifact_resolution_rejects_path_escape() {
+        let bundle = tempdir().expect("bundle");
+        let outside_file = bundle
+            .path()
+            .parent()
+            .expect("bundle parent")
+            .join("trace.json");
+        std::fs::write(&outside_file, b"{}").expect("write outside file");
+
+        let err = resolve_replay_artifact_path(bundle.path(), "../trace.json", "agent_trace.json")
+            .expect_err("path escape must be rejected");
+        assert!(err.to_string().contains("escapes replay bundle dir"));
+    }
+
+    #[test]
+    fn replay_artifact_resolution_allows_relative_paths_inside_bundle() {
+        let bundle = tempdir().expect("bundle");
+        let artifact = bundle.path().join("agent_trace.json");
+        std::fs::write(&artifact, b"[]").expect("write artifact");
+
+        let resolved =
+            resolve_replay_artifact_path(bundle.path(), "agent_trace.json", "agent_trace.json")
+                .expect("resolve inside bundle");
+        assert!(resolved.ends_with("agent_trace.json"));
     }
 }

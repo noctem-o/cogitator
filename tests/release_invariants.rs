@@ -141,9 +141,13 @@ fn verify_witness_bundle_recomputes_hashes() {
         drift::build_hash_chain(&agent_trace, &transcript.entries).expect("build hash chain");
     fs::write(&hash_chain_path, chain.join("\n") + "\n").expect("hash_chain.txt");
 
-    let witness_root =
-        trace::compute_agent_witness_root(&metadata.witnessed, &agent_trace, &transcript.entries)
-            .expect("witness root");
+    let witness_root = trace::compute_agent_witness_root(
+        &metadata.witnessed,
+        &agent_trace,
+        &transcript.entries,
+        &transcript.phantom_entries,
+    )
+    .expect("witness root");
     fs::write(&witness_root_path, format!("{}\n", witness_root)).expect("witness_root.txt");
 
     let artifact_hashes = drift::artifact_hashes(&[

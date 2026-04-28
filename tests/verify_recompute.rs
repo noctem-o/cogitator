@@ -7,8 +7,8 @@ use cogitator::model::{
     WITNESS_MANIFEST_SCHEMA_VERSION,
 };
 use cogitator::tooling::{
-    ToolCall, ToolError, ToolErrorKind, ToolMode, ToolOutcome, ToolRequest, ToolTranscriptRecord,
-    TranscriptFault,
+    PhantomEntry, ToolCall, ToolError, ToolErrorKind, ToolMode, ToolOutcome, ToolRequest,
+    ToolTranscriptRecord, TranscriptFault,
 };
 use cogitator::{drift, trace, verify};
 use tempfile::tempdir;
@@ -84,8 +84,12 @@ fn write_bundle(dir: &std::path::Path, call: ToolCall) -> anyhow::Result<String>
     let chain = drift::build_hash_chain(&agent_trace, &transcript.entries)?;
     fs::write(&hash_chain_path, chain.join("\n") + "\n")?;
 
-    let witness_root =
-        trace::compute_agent_witness_root(&metadata.witnessed, &agent_trace, &transcript.entries)?;
+    let witness_root = trace::compute_agent_witness_root(
+        &metadata.witnessed,
+        &agent_trace,
+        &transcript.entries,
+        &transcript.phantom_entries,
+    )?;
     fs::write(&witness_root_path, format!("{}\n", witness_root))?;
 
     let artifact_hashes = drift::artifact_hashes(&[
@@ -218,4 +222,33 @@ fn recompute_rejects_duplicate_manifest_keys() {
     assert!(err
         .to_string()
         .contains("duplicate JSON object member name"));
+}
+
+#[test]
+fn recompute_detects_phantom_entry_tamper() {
+    let temp = tempdir().expect("tempdir");
+    write_bundle(temp.path(), base_call()).expect("bundle");
+
+    let path = temp.path().join("tool_transcript.json");
+    let mut transcript: ToolTranscriptRecord =
+        serde_json::from_slice(&fs::read(&path).expect("read transcript")).expect("parse");
+    transcript.entries.clear();
+    transcript.phantom_entries = vec![PhantomEntry {
+        step: 0,
+        tool_call_idx: 0,
+        tool_name: "clawdbot.lookup".to_string(),
+        request: serde_json::json!({"case":"alpha"}),
+        disposition: cogitator::policy::PhantomDisposition::Blocked,
+        rule_id: Some("no-lookup".to_string()),
+        reason: "blocked by policy".to_string(),
+    }];
+    canonical_json::write_json(&path, &transcript, "tool_transcript.json").expect("rewrite");
+
+    let receipt = verify::recompute_agent_witness_root_from_bundle(temp.path(), None)
+        .expect("recompute succeeds");
+    assert!(!receipt.matched);
+    let diff = receipt
+        .differing_component
+        .expect("semantic mismatch should include diagnostics");
+    assert!(diff.contains("interceptions_only="), "diagnostic: {diff}");
 }

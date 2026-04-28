@@ -150,6 +150,14 @@ impl PolicyEngine {
 
         let mut document: PolicyDocument = toml::from_str(text)
             .with_context(|| format!("failed to parse policy file: {}", path.display()))?;
+        if document.schema_version != POLICY_SCHEMA_VERSION {
+            anyhow::bail!(
+                "unsupported policy schema_version {} in {} (expected {})",
+                document.schema_version,
+                path.display(),
+                POLICY_SCHEMA_VERSION
+            );
+        }
 
         // Lowercase all patterns at load time so runtime matching is always
         // case-insensitive without paying the allocation cost per call.
@@ -442,5 +450,24 @@ mod tests {
         let history = CallHistory::new();
         let (verdict, _, _) = engine.evaluate(&req("research.fetch"), &history);
         assert_eq!(verdict, PolicyVerdict::Phantom);
+    }
+
+    #[test]
+    fn load_rejects_unknown_schema_version() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let policy_path = temp.path().join("policy.toml");
+        std::fs::write(
+            &policy_path,
+            r#"
+schema_version = 999
+rules = []
+"#,
+        )
+        .expect("write policy");
+
+        let err = PolicyEngine::load(&policy_path).expect_err("must reject unsupported schema");
+        assert!(err
+            .to_string()
+            .contains("unsupported policy schema_version"));
     }
 }
