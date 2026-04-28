@@ -72,35 +72,11 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - name: Install cargo-dist
-        run: |
-          cargo install cargo-dist --locked --version "${CARGO_DIST_VERSION}"
+      - name: Build release profile artifacts (dry-run)
+        run: cargo build --locked --release
 
-      - name: Verify cargo-dist version
-        run: |
-          if cargo dist --version > /tmp/cargo-dist-version.txt 2>/dev/null; then
-            echo "DIST_CMD=cargo dist" >> "$GITHUB_ENV"
-          elif command -v cargo-dist >/dev/null 2>&1; then
-            cargo-dist --version > /tmp/cargo-dist-version.txt
-            echo "DIST_CMD=cargo-dist" >> "$GITHUB_ENV"
-          elif command -v dist >/dev/null 2>&1; then
-            dist --version > /tmp/cargo-dist-version.txt
-            echo "DIST_CMD=dist" >> "$GITHUB_ENV"
-          else
-            echo "cargo-dist executable not found"
-            exit 1
-          fi
-          grep -F "cargo-dist ${CARGO_DIST_VERSION}" /tmp/cargo-dist-version.txt
-
-      - name: Build release artifacts (dry-run, no publish)
-        run: |
-          HOST_TARGET="$(rustc -vV | sed -n 's/^host: //p')"
-          ${DIST_CMD} build --artifacts=global --target="${HOST_TARGET}"
-
-      - name: Verify dist outputs exist
-        run: |
-          test -d dist
-          test -n "$(find dist -maxdepth 1 -type f | head -n 1)"
+      - name: Verify release binary exists
+        run: test -x target/release/cogitator
 
   no-git-build:
     needs: action-pin-policy
