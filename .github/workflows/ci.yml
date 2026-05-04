@@ -80,7 +80,8 @@ jobs:
             -o /tmp/cargo-dist-installer.sh
           sh /tmp/cargo-dist-installer.sh
       - name: Verify cargo-dist version
-        run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
+        run: |
+          "$HOME/.cargo/bin/cargo-dist" --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts (dry-run, no publish)
         run: cargo dist build
