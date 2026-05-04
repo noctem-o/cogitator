@@ -29,7 +29,10 @@ crossterm = { version = "0.28", optional = true, features = ["event-stream"] }
 proptest = "1.4"
 tempfile = "3.12"
 
-[package.metadata.dist]
+[workspace]
+members = ["."]
+
+[workspace.metadata.dist]
 dist = true
 installers = ["shell", "powershell"]
 ci = ["github"]
