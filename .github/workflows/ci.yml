@@ -76,8 +76,7 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 \
             "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
             -o /tmp/cargo-dist-installer.sh
-          sh /tmp/cargo-dist-installer.sh --no-modify-path --bin-dir "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          CARGO_DIST_NO_MODIFY_PATH=1 sh /tmp/cargo-dist-installer.sh
 
       - name: Verify cargo-dist version
         run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
