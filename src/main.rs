@@ -4,7 +4,7 @@ use clap::builder::ArgPredicate;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use sha2::{Digest, Sha256};
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
