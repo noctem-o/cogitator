@@ -72,13 +72,15 @@ jobs:
           rustup default stable
 
       - name: Install cargo-dist
-        run: cargo install --locked cargo-dist --version ${CARGO_DIST_VERSION}
+        run: |
+          cargo install --locked cargo-dist --version ${CARGO_DIST_VERSION}
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Verify cargo-dist version
-        run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
+        run: cargo-dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts (dry-run, no publish)
-        run: cargo dist build
+        run: cargo-dist build
 
       - name: Verify dist outputs exist
         run: |
