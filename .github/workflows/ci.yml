@@ -83,7 +83,7 @@ jobs:
         run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts (dry-run, no publish)
-        run: cargo dist build --artifacts=global
+        run: cargo dist build
 
       - name: Verify dist outputs exist
         run: |
