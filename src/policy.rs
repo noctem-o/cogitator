@@ -125,6 +125,7 @@ impl CallHistory {
 
 // ─── Engine ─────────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
 pub struct PolicyEngine {
     pub document: PolicyDocument,
     pub digest: String,

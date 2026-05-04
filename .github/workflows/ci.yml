@@ -73,17 +73,17 @@ jobs:
 
       - name: Install cargo-dist
         run: |
-          curl -fsSL --proto '=https' --tlsv1.2 \
-            "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh" \
-            -o /tmp/cargo-dist-installer.sh
-          sh /tmp/cargo-dist-installer.sh --no-modify-path --bin-dir "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          DIST_ROOT="$RUNNER_TEMP/cargo-dist"
+          cargo install --locked cargo-dist --version ${CARGO_DIST_VERSION} --root "$DIST_ROOT"
+          echo "$DIST_ROOT/bin" >> "$GITHUB_PATH"
 
       - name: Verify cargo-dist version
-        run: cargo dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
+        run: |
+          command -v cargo-dist
+          cargo-dist --version | grep -F "cargo-dist ${CARGO_DIST_VERSION}"
 
       - name: Build release artifacts (dry-run, no publish)
-        run: cargo dist build --artifacts=global
+        run: cargo-dist build
 
       - name: Verify dist outputs exist
         run: |
@@ -168,5 +168,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: RustSec advisory audit
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+      - name: RustSec advisory audit (vulns only)
+        run: |
+          cargo install --locked cargo-audit --version 0.22.1
+          cargo audit --file ./Cargo.lock
