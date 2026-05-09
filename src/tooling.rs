@@ -300,7 +300,7 @@ impl ToolTranscript {
     ///
     /// **Do not use this from a normal Live agent path** — use `execute()`
     /// instead so the policy gate and history recording fire correctly.
-    pub fn execute_with_response(
+    pub(crate) fn execute_with_response_bypassing_policy_for_harness_only(
         &mut self,
         step: u32,
         request: ToolRequest,

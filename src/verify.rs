@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::agent::AgentTraceEntry;
 use crate::model::{RunMetadata, TraceEvent, WitnessManifest, TRACE_SCHEMA_VERSION};
-use crate::tooling::ToolTranscriptRecord;
+use crate::tooling::{ToolTranscriptRecord, TOOL_TRANSCRIPT_SCHEMA_VERSION};
 use crate::trace::{
     compute_agent_witness_root, encode_agent_trace_entry, encode_event,
     encode_phantom_entry_witness, encode_tool_call_witness, encode_witnessed_metadata,
@@ -147,20 +147,6 @@ pub fn verify(meta_path: &Path, trace_path: &Path, expect: &str) -> Result<Strin
     Ok(computed)
 }
 
-fn resolve_manifest_artifact_path(witness_dir: &Path, raw: &str) -> PathBuf {
-    let p = PathBuf::from(raw);
-    if p.is_absolute() {
-        return p;
-    }
-
-    // If it exists as-is, trust it (useful for local runs where manifest stored relative paths).
-    if p.exists() {
-        return p;
-    }
-
-    witness_dir.join(p)
-}
-
 pub fn recompute_agent_witness_root_from_bundle(
     witness_dir: &Path,
     expect_override: Option<&str>,
@@ -168,11 +154,15 @@ pub fn recompute_agent_witness_root_from_bundle(
     let manifest_path = witness_dir.join("witness_manifest.json");
     let manifest: WitnessManifest =
         crate::strict_json::from_path(&manifest_path, "witness_manifest.json")?;
-
-    let meta_path = resolve_manifest_artifact_path(witness_dir, &manifest.meta_json);
-    let trace_path = resolve_manifest_artifact_path(witness_dir, &manifest.agent_trace_json);
+    if manifest.schema_version != crate::model::WITNESS_MANIFEST_SCHEMA_VERSION {
+        anyhow::bail!("witness manifest schema mismatch");
+    }
+    let meta_path =
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.meta_json)?;
+    let trace_path =
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.agent_trace_json)?;
     let transcript_path =
-        resolve_manifest_artifact_path(witness_dir, &manifest.tool_transcript_json);
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.tool_transcript_json)?;
 
     let metadata: RunMetadata = crate::strict_json::from_path(&meta_path, "meta.json")?;
 
@@ -181,11 +171,14 @@ pub fn recompute_agent_witness_root_from_bundle(
 
     let transcript: ToolTranscriptRecord =
         crate::strict_json::from_path(&transcript_path, "tool_transcript.json")?;
+    if transcript.schema_version != TOOL_TRANSCRIPT_SCHEMA_VERSION {
+        anyhow::bail!("tool transcript schema mismatch");
+    }
 
     let expected = if let Some(expect) = expect_override {
         expect.trim().to_string()
     } else if let Some(path) = manifest.witness_root_txt.as_ref() {
-        let root_path = resolve_manifest_artifact_path(witness_dir, path);
+        let root_path = crate::io_utils::resolve_bundle_relative_path(witness_dir, path)?;
         std::fs::read_to_string(&root_path)
             .with_context(|| format!("failed to read {}", root_path.display()))?
             .trim()

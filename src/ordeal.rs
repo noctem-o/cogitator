@@ -321,7 +321,11 @@ pub fn run_ordeal(
                     &request,
                     config.regress,
                 )?;
-                transcript.execute_with_response(step, request.clone(), generated)
+                transcript.execute_with_response_bypassing_policy_for_harness_only(
+                    step,
+                    request.clone(),
+                    generated,
+                )
             } else {
                 let replayed = transcript.execute(step, request.clone());
                 if config.regress {

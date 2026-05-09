@@ -6,6 +6,43 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+pub fn resolve_bundle_relative_path(witness_dir: &Path, raw: &str) -> Result<PathBuf> {
+    let root = std::fs::canonicalize(witness_dir).with_context(|| {
+        format!(
+            "failed to canonicalize witness dir {}",
+            witness_dir.display()
+        )
+    })?;
+    let candidate = PathBuf::from(raw);
+    if candidate.is_absolute() {
+        anyhow::bail!("absolute manifest path is forbidden: {}", raw);
+    }
+    let joined = root.join(&candidate);
+    let joined = if joined.exists() {
+        joined
+    } else {
+        root.join(
+            candidate
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("invalid empty manifest path: {}", raw))?,
+        )
+    };
+    let canon = std::fs::canonicalize(&joined).with_context(|| {
+        format!(
+            "failed to canonicalize manifest artifact path {}",
+            joined.display()
+        )
+    })?;
+    if !canon.starts_with(&root) {
+        anyhow::bail!(
+            "manifest artifact escapes witness dir: {} -> {}",
+            raw,
+            canon.display()
+        );
+    }
+    Ok(canon)
+}
+
 pub fn write_atomic<F>(path: &Path, label: &str, write_fn: F) -> Result<()>
 where
     F: FnOnce(&mut File) -> Result<()>,

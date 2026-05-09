@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::agent::AgentTraceEntry;
 use crate::canonical_json;
@@ -205,6 +205,7 @@ pub fn compute_agent_witness_root(
     tool_calls: &[ToolCall],
     phantom_entries: &[PhantomEntry],
 ) -> Result<String> {
+    validate_agent_witness_inputs(agent_trace, tool_calls, phantom_entries)?;
     let metadata_bytes = encode_witnessed_metadata(metadata)?;
     let mut witness = witness::Witness::new(&metadata_bytes)?;
     let mut ops_by_step = index_tool_ops_by_step(tool_calls, phantom_entries);
@@ -232,6 +233,53 @@ pub fn compute_agent_witness_root(
     }
 
     Ok(witness.finalize_hex())
+}
+
+fn validate_agent_witness_inputs(
+    agent_trace: &[AgentTraceEntry],
+    tool_calls: &[ToolCall],
+    phantom_entries: &[PhantomEntry],
+) -> Result<()> {
+    let mut seen_steps = BTreeSet::new();
+    let mut prev_step: Option<u32> = None;
+    for entry in agent_trace {
+        if let Some(prev) = prev_step {
+            if entry.step <= prev {
+                anyhow::bail!("agent_trace steps must be strictly increasing");
+            }
+        }
+        if !seen_steps.insert(entry.step) {
+            anyhow::bail!("duplicate agent_trace step {}", entry.step);
+        }
+        prev_step = Some(entry.step);
+    }
+    let mut seen_idx = HashSet::new();
+    for call in tool_calls {
+        if !seen_steps.contains(&call.step) {
+            anyhow::bail!("orphan tool call at absent step {}", call.step);
+        }
+        if !seen_idx.insert(call.tool_call_idx) {
+            anyhow::bail!("duplicate tool_call_idx {}", call.tool_call_idx);
+        }
+    }
+    for phantom in phantom_entries {
+        if !seen_steps.contains(&phantom.step) {
+            anyhow::bail!("orphan phantom entry at absent step {}", phantom.step);
+        }
+        if !seen_idx.insert(phantom.tool_call_idx) {
+            anyhow::bail!(
+                "executed/phantom tool_call_idx collision {}",
+                phantom.tool_call_idx
+            );
+        }
+    }
+    let total = tool_calls.len() + phantom_entries.len();
+    for idx in 0..total as u32 {
+        if !seen_idx.contains(&idx) {
+            anyhow::bail!("non-contiguous tool_call_idx; missing {}", idx);
+        }
+    }
+    Ok(())
 }
 
 pub fn index_tool_calls_by_step(tool_calls: &[ToolCall]) -> HashMap<u32, Vec<ToolCallWitnessView>> {

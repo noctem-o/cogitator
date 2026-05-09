@@ -186,20 +186,6 @@ pub fn bundle_hash(artifact_hashes: &BTreeMap<String, String>) -> Result<String>
     Ok(crate::hex::encode(&hasher.finalize()))
 }
 
-fn resolve_manifest_artifact_path(witness_dir: &Path, raw: &str) -> PathBuf {
-    let p = PathBuf::from(raw);
-    if p.is_absolute() {
-        return p;
-    }
-
-    // If it exists as-is, trust it (useful for local runs where manifest stored relative paths).
-    if p.exists() {
-        return p;
-    }
-
-    witness_dir.join(p)
-}
-
 /// Verify that the witness bundle is self-consistent.
 ///
 /// Checks:
@@ -211,24 +197,36 @@ pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
     let manifest_path = witness_dir.join("witness_manifest.json");
     let manifest: WitnessManifest =
         crate::strict_json::from_path(&manifest_path, "witness_manifest.json")?;
+    if manifest.schema_version != crate::model::WITNESS_MANIFEST_SCHEMA_VERSION {
+        anyhow::bail!("witness manifest schema mismatch");
+    }
 
     let mut artifact_paths: Vec<PathBuf> = vec![
-        resolve_manifest_artifact_path(witness_dir, &manifest.meta_json),
-        resolve_manifest_artifact_path(witness_dir, &manifest.agent_trace_json),
-        resolve_manifest_artifact_path(witness_dir, &manifest.tool_transcript_json),
-        resolve_manifest_artifact_path(witness_dir, &manifest.drift_report_json),
-        resolve_manifest_artifact_path(witness_dir, &manifest.hash_chain_txt),
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.meta_json)?,
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.agent_trace_json)?,
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.tool_transcript_json)?,
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.drift_report_json)?,
+        crate::io_utils::resolve_bundle_relative_path(witness_dir, &manifest.hash_chain_txt)?,
     ];
 
     // Optional
     if let Some(ref path) = manifest.chaos_profile_json {
-        artifact_paths.push(resolve_manifest_artifact_path(witness_dir, path));
+        artifact_paths.push(crate::io_utils::resolve_bundle_relative_path(
+            witness_dir,
+            path,
+        )?);
     }
     if let Some(ref path) = manifest.witness_root_txt {
-        artifact_paths.push(resolve_manifest_artifact_path(witness_dir, path));
+        artifact_paths.push(crate::io_utils::resolve_bundle_relative_path(
+            witness_dir,
+            path,
+        )?);
     }
     if let Some(ref path) = manifest.nix_provenance_json {
-        artifact_paths.push(resolve_manifest_artifact_path(witness_dir, path));
+        artifact_paths.push(crate::io_utils::resolve_bundle_relative_path(
+            witness_dir,
+            path,
+        )?);
     }
 
     // Compute
