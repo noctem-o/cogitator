@@ -4,57 +4,64 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg?style=flat-square)](https://www.rust-lang.org/)
 [![Release](https://img.shields.io/github/v/release/noctem-o/cogitator?style=flat-square)](https://github.com/noctem-o/cogitator/releases)
-[![Spec](https://img.shields.io/badge/Spec-Apache--2.0-blue?style=flat-square)](spec/COGITATOR_WITNESS_PROTOCOL.md)
+[![Spec](https://img.shields.io/badge/Spec-Draft-informational?style=flat-square)](spec/COGITATOR_WITNESS_PROTOCOL.md)
 
-Cogitator is a Rust harness for producing tamper-evident records of AI-agent execution.
+Cogitator is a Rust harness for producing deterministic, tamper-evident records of AI-agent runs.
 
-It exists to make agent runs independently auditable: each run produces a witness bundle with a recomputable root, plus enough replay data to validate what happened and under what policy constraints.
+Each run emits a witness root, a replay bundle, and a policy-aware tool transcript. The witness root is computed from canonical witnessed semantics (not from report files), and blocked/phantom operations are recorded explicitly.
 
-## What it is
+## Why it exists
 
-- Tamper-evident witness bundles with BLAKE3 witness roots.
-- Canonical JSON commitments (RFC 8785/JCS-style target) for stable verification.
-- Deterministic replay and verify workflows.
-- Pre-call policy interception with explicit allow/block/phantom outcomes.
-- Phantom entries and policy digests committed into witness data.
-- Drift demos and CI checks for witness-root stability.
+Most agent audit trails are mutable logs plus summaries written after execution. That is useful for debugging, but weak as evidence.
 
-## What it is not
+Cogitator commits the execution boundary before tool effects become the only source of truth. It records what the agent requested, what was executed, and what was intercepted.
 
-- Not a general-purpose agent framework.
-- Not a compliance product by itself.
-- Not proof that a run originally occurred unless the root is externally anchored.
-- Not a substitute for legal, regulatory, or security review.
+The project is a verifier/audit substrate. It is not a full agent framework and it does not claim to solve runtime trust on its own.
+
+## What you get
+
+| Capability | What it means in practice |
+|---|---|
+| Witness root | Domain-separated BLAKE3 commitment over witnessed metadata, agent trace entries, and tool/phantom operations. |
+| Strict canonical witnessed bytes | Deterministic canonical JSON subset for committed bytes (JCS-style / I-JSON constrained). |
+| Tool transcript | Executed calls with outcomes and faults, plus policy digest when present. |
+| Phantom entries | Blocked/phantom tool requests are recorded and committed instead of silently dropped. |
+| Bundle verifier | Path confinement + artifact self-consistency checks on bundle contents. |
+| Replay/drift reports | Drift demos and replay checks to surface mismatches deterministically. |
+| Provenance split | Provenance is recorded separately and excluded from witness bytes. |
+| Nix provenance (optional) | `nix_provenance.json` is diagnostic/provenance-only and does not change witness root. |
 
 ## Quick start
 
 ```bash
 cargo build --release
-
-# Run a deterministic drift demo
 cargo run --release -- demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
-
-# Verify the baseline bundle
 cargo run --release -- verify --witness demo_out/drift/baseline_faults
-
-# Semantic recompute check
 cargo run --release -- verify --witness demo_out/drift/baseline_faults --recompute-witness-root
 ```
 
-## Verify a bundle
+Expected result:
+
+- verify reports no bundle issues
+- witness recompute reports `matched=true`
+
+## Record and verify an agent run
 
 ```bash
-# Record a run
 cargo run --release -- run --agent ordeal --runs 1 --out-dir out --clean
-
-# Verify witness/manifest consistency
 cargo run --release -- verify --witness out/run_0000
-
-# Verify by recomputing committed components
 cargo run --release -- verify --witness out/run_0000 --recompute-witness-root
 ```
 
 ## Policy interception
+
+Cogitator evaluates policy before dispatch. First matching rule wins.
+
+- `allow`: call is executed and recorded as a real tool entry.
+- `block`: call is denied; a blocked phantom entry is recorded.
+- `phantom`: call is intercepted; a phantom entry is recorded.
+
+If no policy file is provided, current behavior is allow-all.
 
 ```toml
 schema_version = 1
@@ -74,47 +81,69 @@ verdict = "phantom"
 reason = "observe only"
 ```
 
-Rules are evaluated top-to-bottom; first match wins.
+## Verification model
+
+Cogitator verification has three layers:
+
+1. **Bundle self-consistency**: manifest paths + diagnostic artifact hashes.
+2. **Semantic witness recompute**: recompute root from witnessed semantics.
+3. **Anchored verification**: compare against an externally supplied expected root (`--expect`).
+
+`witness_root.txt` stored in the same bundle is useful for internal consistency checks, but by itself it does not prove original occurrence.
 
 ## Artifact layout
 
 ```text
-out/
+out/run_0000/
 ├── meta.json
-├── trace.jsonl
-├── results.csv / results.json
-├── summary.json
-├── analysis.json
+├── agent_trace.json
+├── tool_transcript.json
+├── chaos_profile.json
+├── drift_report.json
+├── hash_chain.txt
+├── witness_manifest.json
 ├── witness_root.txt
-└── run_0000/
-    ├── agent_trace.json
-    ├── tool_transcript.json
-    ├── chaos_profile.json
-    ├── drift_report.json
-    ├── hash_chain.txt
-    ├── meta.json
-    ├── witness_manifest.json
-    ├── witness_root.txt
-    └── verify_report.json
+├── verify_report.json
+└── nix_provenance.json        # optional
 ```
 
-## Design notes
+Manifest artifact paths are bundle-relative and verified under strict path confinement.
 
-- **Witness/provenance split:** provenance metadata is recorded but not committed into the witness root.
-- **Deterministic replay:** same inputs, seed, policy, and profile should reproduce the same root.
-- **Canonicalization target:** witness commitments rely on canonical JSON for stable byte-level hashing.
-- **Phantom entries:** blocked/phantomed calls are still committed as auditable intent records.
+Committed vs diagnostic (high-level):
 
-## Protocol specification
+- committed semantics: witnessed metadata, agent trace entries, tool/phantom operations
+- diagnostic/self-consistency: manifest artifact hashes, bundle hash, verify/report artifacts
 
-The protocol is documented in [`spec/COGITATOR_WITNESS_PROTOCOL.md`](spec/COGITATOR_WITNESS_PROTOCOL.md). The implementation and the protocol spec are both Apache-2.0.
+## Commitment boundary
 
-## Release and provenance
+Committed into witness root:
 
-- Release artifacts are produced with `cargo-dist` via GitHub Actions.
-- GitHub artifact attestations are emitted in the release workflow.
-- CI includes format/clippy/test gates plus deterministic replay and verify checks.
-- The repo includes a no-git build gate for release reproducibility hygiene.
+- witnessed metadata (`meta.json` witnessed section)
+- canonicalized `agent_trace` entry semantics
+- canonicalized executed tool-call witness view
+- canonicalized phantom/intercepted witness view
+- policy digest when present in transcript
+- chaos/fault information when represented in committed tool outcomes
+
+Not committed into witness root:
+
+- provenance section of metadata
+- external environment attestations
+- report-only analytics and verifier output files
+
+## Design notes / threat model
+
+Cogitator is good at catching:
+
+- post-hoc edits to committed run semantics (when checked against an expected root)
+- malformed, incomplete, or inconsistent transcripts during recompute
+- path escape attempts in manifest artifact references
+
+Cogitator does not by itself provide:
+
+- proof that a run happened unless root is externally anchored
+- hardware/runtime attestation
+- deterministic LLM outputs for nondeterministic backends
 
 ## Development
 
@@ -122,21 +151,28 @@ The protocol is documented in [`spec/COGITATOR_WITNESS_PROTOCOL.md`](spec/COGITA
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+cargo run --locked -- ordeal check --golden goldens/ordeal_witness_root.txt
 ```
 
-## Nix
+## Release / supply chain
 
-A Nix dev shell is available:
+Current repository workflows include:
+
+- `cargo-dist` release automation
+- GitHub artifact attestations in release workflow
+- pinned GitHub Actions enforcement
+- no-git build gate checks
+- RustSec `cargo audit` checks
+
+See workflow files for exact enforcement points.
+
+## Nix
 
 ```bash
 nix develop
 ```
 
-Nix details are provenance-only and do not alter witness roots.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Nix provenance capture is provenance-only and does not alter witness root computation.
 
 ## License
 

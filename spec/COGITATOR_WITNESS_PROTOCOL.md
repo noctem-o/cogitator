@@ -1,261 +1,143 @@
 # Cogitator Witness Protocol
 
-**Version:** 1.0  
-**Status:** Draft  
-**Date:** 2026-04-09  
-**Author:** noctem-o  
-**Licence:** Apache License 2.0 (see footer)
-
----
+**Status:** Draft (reference implementation in this repository)  
+**Last updated:** 2026-05-09  
+**License:** Apache-2.0
 
-## Abstract
+## 1) Scope
 
-This document specifies the Cogitator Witness Protocol -- a scheme for producing cryptographically verifiable, tamper-evident records of AI agent execution. A conforming implementation produces a single witness root value that any third party can independently recompute from the same inputs to verify the record was not altered after the fact.
+This document defines the current witness protocol implemented by Cogitator.
 
-The protocol is implementation-agnostic. The reference implementation is Cogitator (Rust), but any language or framework can produce conforming witness bundles.
-
----
-
-## Motivation
-
-AI agents deployed in regulated or high-stakes environments issue tool calls with real-world consequences. Existing audit approaches -- log ingestion, post-hoc summaries, model cards -- are reconstructive. They describe what probably happened, not what provably happened. Logs are mutable. Post-hoc summaries are interpretations.
-
-The Cogitator Witness Protocol takes the position that agent execution should be as auditable as a compiled binary in a reproducible build system. The witness root is the runtime equivalent of a content-addressed store path: a cryptographic commitment that ties a specific output to a specific, verifiable execution.
-
----
-
-## Definitions
-
-| Term | Definition |
-|---|---|
-| **Run** | A single end-to-end execution of an agent against a set of inputs |
-| **Tool call** | A discrete action dispatched by the agent to an external or internal tool |
-| **Phantom entry** | A record of a tool call that was intercepted and blocked before dispatch |
-| **Witness root** | A single BLAKE3 hex digest committing the entire run record |
-| **Policy digest** | A SHA-256 hex digest of the policy file in effect during the run |
-| **Canonical JSON** | JSON serialised according to RFC 8785 (deterministic key ordering, no insignificant whitespace) |
-| **Witness bundle** | The complete set of artefact files for a single run |
-
----
-
-## Witness Bundle Structure
-
-A conforming witness bundle MUST contain the following files:
-
-```
-run_<id>/
-+-- agent_trace.json        # Agent steps: inputs, tool requests, outputs
-+-- tool_transcript.json    # All tool calls (real and phantom) with outcomes
-+-- chaos_profile.json      # Fault injection schedule (may be empty)
-+-- drift_report.json       # Replay mismatch report (empty if no drift)
-+-- hash_chain.txt          # Per-call BLAKE3 hashes, one per line
-+-- meta.json               # Witnessed metadata
-+-- witness_manifest.json   # Per-file hashes and bundle hash
-+-- witness_root.txt        # Single hex string -- the tamper-evident root
-```
-
-All JSON files MUST be serialised as RFC 8785 canonical JSON before hashing.
-
----
-
-## Schema Definitions
-
-### meta.json
-
-```json
-{
-  "schema_version": 4,
-  "run_id": "<string>",
-  "agent_id": "<string>",
-  "seed": "<uint64>",
-  "policy_digest": "<sha256-hex | null>",
-  "started_at": "<ISO 8601 datetime>",
-  "finished_at": "<ISO 8601 datetime>",
-  "cogitator_version": "<semver string>"
-}
-```
-
-- `schema_version` MUST be `4` for this version of the protocol.
-- `policy_digest` MUST be the SHA-256 hex digest of the policy file bytes, or `null` if no policy was in effect.
-- `seed` MUST be the fixed random seed used for the run, enabling deterministic replay.
-
-### tool_transcript.json
+It is intentionally implementation-coupled: schema constants, commitment boundaries, and verification rules here are expected to match code in `src/` exactly. Future protocol-breaking changes require explicit migration notes.
 
-```json
-{
-  "schema_version": 4,
-  "entries": [ /* ToolCall[] */ ],
-  "phantom_entries": [ /* PhantomEntry[] */ ],
-  "policy_digest": "<sha256-hex | null>"
-}
-```
+## 2) Protocol versions and schemas
 
-#### ToolCall object
+Current schema constants:
 
-```json
-{
-  "step": "<uint>",
-  "tool_call_idx": "<uint>",
-  "tool_name": "<string>",
-  "request": { /* arbitrary JSON */ },
-  "response": { /* arbitrary JSON */ },
-  "chaos_fault": "<string | null>",
-  "call_hash": "<blake3-hex>"
-}
-```
+- Witnessed trace schema version: **3** (`TRACE_SCHEMA_VERSION`)
+- Witness manifest schema version: **3** (`WITNESS_MANIFEST_SCHEMA_VERSION`)
+- Tool transcript schema version: **4** (`TOOL_TRANSCRIPT_SCHEMA_VERSION`)
 
-- `call_hash` MUST be the BLAKE3 digest of the RFC 8785 canonical JSON of this object (with `call_hash` set to the empty string before hashing).
+## 3) Bundle layout
 
-#### PhantomEntry object
+A run bundle contains:
 
-```json
-{
-  "step": "<uint>",
-  "tool_call_idx": "<uint>",
-  "tool_name": "<string>",
-  "request": { /* arbitrary JSON */ },
-  "disposition": "Blocked | Phantom",
-  "rule_id": "<string | null>",
-  "reason": "<string | null>",
-  "entry_hash": "<blake3-hex>"
-}
-```
+- `meta.json`
+- `agent_trace.json`
+- `tool_transcript.json`
+- `chaos_profile.json`
+- `drift_report.json`
+- `hash_chain.txt`
+- `witness_manifest.json`
+- `witness_root.txt`
+- optional `nix_provenance.json`
 
-- `entry_hash` MUST be the BLAKE3 digest of the RFC 8785 canonical JSON of this object (with `entry_hash` set to the empty string before hashing).
-- `disposition` MUST be one of `Blocked` (tool call explicitly denied by policy) or `Phantom` (tool call silently observed but not dispatched).
+`witness_manifest.json` paths are bundle-relative by design.
 
-### hash_chain.txt
+## 4) Witnessed vs provenance data
 
-A newline-delimited text file. Each line is the `call_hash` or `entry_hash` of one record in the order they were produced, interleaving real calls and phantom entries chronologically.
+Cogitator separates metadata into:
 
-```
-<blake3-hex>\n
-<blake3-hex>\n
-...
-```
+- `metadata.witnessed`: committed into witness bytes
+- `metadata.provenance`: recorded for diagnostics/provenance, **excluded** from witness bytes
 
-### witness_manifest.json
+This split is normative for current protocol behavior.
 
-```json
-{
-  "files": {
-    "agent_trace.json": "<blake3-hex>",
-    "tool_transcript.json": "<blake3-hex>",
-    "chaos_profile.json": "<blake3-hex>",
-    "drift_report.json": "<blake3-hex>",
-    "hash_chain.txt": "<blake3-hex>",
-    "meta.json": "<blake3-hex>"
-  },
-  "bundle_hash": "<blake3-hex>"
-}
-```
+## 5) Canonicalization
 
-- Each file hash is the BLAKE3 digest of the raw file bytes.
-- `bundle_hash` is the BLAKE3 digest of the RFC 8785 canonical JSON of the `files` object.
+Witnessed bytes use Cogitator’s strict deterministic canonical JSON subset (JCS-style / I-JSON constrained):
 
-### witness_root.txt
+- deterministic object-key ordering
+- deterministic UTF-8 serialization
+- integer-only witnessed numbers
 
-A single line containing the BLAKE3 hex digest of the RFC 8785 canonical JSON of the complete `witness_manifest.json` object (including `bundle_hash`).
+This is not a blanket claim of full RFC 8785 conformance across all JSON artifacts.
 
-```
-<blake3-hex>\n
-```
+Report and diagnostic files may use ordinary JSON where implementation does so.
 
-This is the only value that needs to be published for a third party to verify the entire bundle.
+## 6) Witness root algorithm
 
----
+The authoritative witness root algorithm is a domain-separated BLAKE3 linear chain over semantic witness events.
 
-## Witness Root Computation
+1. Start witness state with `Witness::new(canonical(witnessed_metadata))` using INIT domain separation.
+2. Iterate `agent_trace` entries in order.
+3. For each agent step, commit canonical `AgentTraceEntryWitness` bytes.
+4. For that same step, commit all tool operations (executed calls and phantom/intercepted entries) ordered by `tool_call_idx`.
+5. Each `Witness::update` uses STEP domain separation, previous hash, length prefix, and event bytes.
+6. Final root is lowercase BLAKE3 hex.
 
-The witness root is computed as follows:
+`witness_manifest.json`, `artifact_hashes`, and `bundle_hash` are **not** the witness-root authority.
 
-```
-1. Serialise each bundle file to RFC 8785 canonical JSON (or raw bytes for text files).
-2. Compute BLAKE3(file_bytes) for each file -> files map.
-3. Compute BLAKE3(RFC8785(files)) -> bundle_hash.
-4. Serialise witness_manifest.json including bundle_hash.
-5. Compute BLAKE3(RFC8785(witness_manifest)) -> witness_root.
-6. Write witness_root as a single lowercase hex string to witness_root.txt.
-```
+## 7) Transcript totality and ordering rules
 
-A verifier replays steps 1-6 from the bundle files and asserts the computed root matches the published `witness_root.txt`.
+Verifier recompute fails closed if transcript semantics are incomplete or inconsistent.
 
----
+Required properties:
 
-## Policy Protocol
+- `agent_trace.step` is strictly increasing and unique.
+- No orphan tool/phantom operations (every op step must exist in agent trace).
+- No duplicate/colliding `tool_call_idx` across executed+phantom operations.
+- Global `tool_call_idx` coverage is contiguous from zero.
+- For each step, `agent_trace.tool_requests` must match transcript operations by tool name and request arguments.
 
-The policy layer is optional. If no policy file is provided, all tool calls are implicitly allowed and `policy_digest` MUST be `null` in both `meta.json` and `tool_transcript.json`.
+## 8) Path confinement rules
 
-When a policy file is provided:
+Manifest artifact paths must be bundle-relative.
 
-1. The policy file bytes MUST be SHA-256 digested before any run begins.
-2. The digest MUST be committed to `meta.json` and `tool_transcript.json` before the first tool call.
-3. Every tool call MUST be evaluated against the policy before dispatch.
-4. Blocked or phantomed calls MUST produce a `PhantomEntry` committed to the witness chain.
-5. The `CallHistory` (cumulative record of all verdicts in the current run) MUST be updated after every verdict, including blocked calls.
+Verifier rejects:
 
-### Policy Verdicts
+- absolute paths
+- canonical path escapes (`..` traversal after normalization)
+- symlink escapes outside bundle root
 
-| Verdict | Tool dispatched? | Agent receives | Chain entry |
-|---|---|---|---|
-| `allow` | Yes | Real tool response | `ToolCall` |
-| `block` | No | `{ "blocked": true, "reason": "<string>" }` | `PhantomEntry(Blocked)` |
-| `phantom` | No | `{ "blocked": true, "reason": "<string>" }` | `PhantomEntry(Phantom)` |
+## 9) Artifact hashes and bundle hash
 
----
+`artifact_hashes` and `bundle_hash` are bundle self-consistency diagnostics.
 
-## Deterministic Replay
+- Current implementation uses SHA-256 for these diagnostics.
+- They are useful for tamper detection and integrity reporting.
+- They do not replace semantic witness recompute.
 
-A conforming implementation MUST support replay mode. Given:
+## 10) Verification modes
 
-- The original `agent_trace.json` (inputs)
-- The original `chaos_profile.json` (fault schedule)
-- The original policy file (identified by `policy_digest`)
-- The original `seed`
+Cogitator exposes three relevant verification modes:
 
-A replay run MUST produce an identical `witness_root` to the original run. Any deviation MUST be reported as a `DriftIssue` in `drift_report.json`.
+1. **Bundle self-consistency**: validate manifest paths and diagnostic hashes.
+2. **Semantic witness recompute**: recompute root from witnessed semantics (metadata, trace, tool/phantom operations).
+3. **Anchored verification**: compare against externally supplied expected root (for example via `--expect`).
 
----
+A co-located `witness_root.txt` alone is not proof that the run originally occurred.
 
-## Conformance
+## 11) Policy behavior (current)
 
-An implementation is conforming if:
+- If policy file exists, policy digest is committed.
+- If policy file is absent, behavior currently resolves to allow-all.
+- Verdicts:
+  - `allow`: real tool call recorded and committed
+  - `block`: phantom/blocked entry recorded and committed
+  - `phantom`: phantom/intercepted entry recorded and committed
 
-1. It produces all required bundle files.
-2. All JSON files are RFC 8785 canonical before hashing.
-3. The witness root computation follows the algorithm above exactly.
-4. Phantom entries are produced for all blocked and phantomed calls.
-5. The policy digest is committed before the first tool call when a policy is in effect.
-6. Replay of the same inputs produces an identical witness root.
+This section documents current behavior, not a recommendation.
 
----
+## 12) Threat model summary
 
-## Relation to Regulatory Frameworks
+Cogitator is designed to:
 
-The Cogitator Witness Protocol is designed to satisfy the technical requirements of:
+- detect post-hoc mutation of committed bundle contents when compared against an expected root
+- reject malformed or incomplete transcript structures during recompute
 
-- **EU AI Act (2024) Articles 12 and 9** -- tamper-evident record-keeping and risk management systems for high-risk AI.
-- **FCA AI and machine learning guidance** -- audit trails for automated decision systems in financial services.
-- **NIST AI RMF (2023)** -- traceability and accountability requirements for AI systems.
+Cogitator does **not** by itself:
 
-The witness root provides a single publishable value that demonstrates a run record has not been altered. The policy digest demonstrates the constraints in effect at time of execution. The phantom entries demonstrate what the agent attempted but was not permitted to do.
+- prove a run occurred (without external root anchoring)
+- attest hardware/runtime environment integrity
+- make nondeterministic model backends deterministic
 
----
+## 13) Versioning and migrations
 
-## Versioning
+Protocol-breaking changes (schema constants, witness event encoding, root algorithm, commitment boundary) require:
 
-This document describes protocol version 1.0, corresponding to `schema_version: 4` in bundle files. Breaking changes to the schema or hash computation algorithm will increment the protocol version and the schema version together.
+- versioned migration notes in this spec
+- explicit verifier compatibility notes
+- test updates showing expected behavior changes
 
----
-
-## Licence
-
-Copyright 2026 noctem-o
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at:
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
-Note: This specification document and the Cogitator reference implementation are both licenced under Apache 2.0.
+No such protocol change is introduced in this documentation pass.
