@@ -1,12 +1,15 @@
 # Cogitator
 
+Cogitator is a Rust harness for producing deterministic, tamper-evident records of AI-agent runs.
+
 [![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/cogitator/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/noctem-o/cogitator/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg?style=flat-square)](https://www.rust-lang.org/)
 [![Release](https://img.shields.io/github/v/release/noctem-o/cogitator?style=flat-square)](https://github.com/noctem-o/cogitator/releases)
-[![Spec](https://img.shields.io/badge/Spec-Draft-informational?style=flat-square)](spec/COGITATOR_WITNESS_PROTOCOL.md)
+[![Protocol](https://img.shields.io/badge/protocol-draft-informational?style=flat-square)](spec/COGITATOR_WITNESS_PROTOCOL.md)
+[![Threat model](https://img.shields.io/badge/threat%20model-design%20notes-informational?style=flat-square)](#design-notes--threat-model)
 
-Cogitator is a Rust harness for producing deterministic, tamper-evident records of AI-agent runs.
+**Navigation:** [Quick start](#quick-start) · [Verification model](#verification-model) · [Policy interception](#policy-interception) · [Protocol](spec/COGITATOR_WITNESS_PROTOCOL.md) · [Threat model](#design-notes--threat-model) · [Development](#development)
 
 Each run emits a witness root, a replay bundle, and a policy-aware tool transcript. The witness root is computed from canonical witnessed semantics (not from report files), and blocked/phantom operations are recorded explicitly.
 
@@ -35,7 +38,13 @@ The project is a verifier/audit substrate. It is not a full agent framework and 
 
 ```bash
 cargo build --release
+```
+
+```bash
 cargo run --release -- demo drift --seed 42 --threads 1 --fault-profile stress --out-dir demo_out --clean
+```
+
+```bash
 cargo run --release -- verify --witness demo_out/drift/baseline_faults
 cargo run --release -- verify --witness demo_out/drift/baseline_faults --recompute-witness-root
 ```
@@ -49,7 +58,13 @@ Expected result:
 
 ```bash
 cargo run --release -- run --agent ordeal --runs 1 --out-dir out --clean
+```
+
+```bash
 cargo run --release -- verify --witness out/run_0000
+```
+
+```bash
 cargo run --release -- verify --witness out/run_0000 --recompute-witness-root
 ```
 
@@ -81,6 +96,16 @@ verdict = "phantom"
 reason = "observe only"
 ```
 
+```text
+Agent step
+  -> tool request
+  -> policy gate
+     -> allow: executed ToolCall
+     -> block/phantom: PhantomEntry
+  -> canonical witness event stream
+  -> BLAKE3 witness root
+```
+
 ## Verification model
 
 Cogitator verification has three layers:
@@ -90,6 +115,12 @@ Cogitator verification has three layers:
 3. **Anchored verification**: compare against an externally supplied expected root (`--expect`).
 
 `witness_root.txt` stored in the same bundle is useful for internal consistency checks, but by itself it does not prove original occurrence.
+
+| Check | Command | What it proves | What it does not prove |
+|---|---|---|---|
+| Bundle self-consistency | `verify --witness <bundle_dir>` | Manifest paths resolve under path confinement and diagnostic hashes match recorded values. | That the run originally occurred. |
+| Semantic recompute | `verify --witness <bundle_dir> --recompute-witness-root` | Witnessed semantics recompute to the bundle's expected/co-located root. | External timestamping or publication. |
+| Anchored verification | `verify --witness <bundle_dir> --expect <root>` | Bundle semantics match an externally supplied expected root. | Runtime/hardware integrity of the original execution. |
 
 ## Artifact layout
 
