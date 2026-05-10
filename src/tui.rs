@@ -63,16 +63,19 @@ impl Palette {
 }
 
 #[cfg(feature = "tui")]
-pub fn launch(
-    theme: &str,
-    no_color: bool,
-    seed: u64,
-    runs: u32,
-    results: &[CaseResult],
-    summary: &Summary,
-    metadata: &RunMetadata,
-    manifest: &ArtifactManifest,
-) -> Result<()> {
+pub struct LaunchView<'a> {
+    pub theme: &'a str,
+    pub no_color: bool,
+    pub seed: u64,
+    pub runs: u32,
+    pub results: &'a [CaseResult],
+    pub summary: &'a Summary,
+    pub metadata: &'a RunMetadata,
+    pub manifest: &'a ArtifactManifest,
+}
+
+#[cfg(feature = "tui")]
+pub fn launch(view: LaunchView<'_>) -> Result<()> {
     enable_raw_mode().context("enable raw mode")?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen).context("enter alternate screen")?;
@@ -81,11 +84,11 @@ pub fn launch(
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
     let pr_url = std::env::var("COGITATOR_PR_URL").ok();
-    let palette = Palette::from_theme(theme, no_color);
+    let palette = Palette::from_theme(view.theme, view.no_color);
 
-    let pass_count = results.iter().filter(|result| result.passed).count();
-    let fail_count = results.len().saturating_sub(pass_count);
-    let entropy_sources = metadata.witnessed.entropy_sources.join(", ");
+    let pass_count = view.results.iter().filter(|result| result.passed).count();
+    let fail_count = view.results.len().saturating_sub(pass_count);
+    let entropy_sources = view.metadata.witnessed.entropy_sources.join(", ");
 
     loop {
         terminal.draw(|frame| {
@@ -115,16 +118,16 @@ pub fn launch(
                 ]),
                 Line::from(vec![
                     Span::styled(" witness summary", Style::default().fg(palette.accent)),
-                    Span::raw(format!("  •  Seed {}", seed)),
+                    Span::raw(format!("  •  Seed {}", view.seed)),
                 ]),
             ])
             .wrap(Wrap { trim: true });
             frame.render_widget(title, layout[0]);
 
             let summary_text = vec![
-                Line::from(format!("Runs: {}", runs)),
-                Line::from(format!("Pass rate: {:.2}%", summary.pass_rate * 100.0)),
-                Line::from(format!("Average score: {:.3}", summary.avg_score)),
+                Line::from(format!("Runs: {}", view.runs)),
+                Line::from(format!("Pass rate: {:.2}%", view.summary.pass_rate * 100.0)),
+                Line::from(format!("Average score: {:.3}", view.summary.avg_score)),
                 Line::from(format!("Passed: {}  Failed: {}", pass_count, fail_count)),
                 Line::from(format!(
                     "Entropy sources: {}",
@@ -136,7 +139,7 @@ pub fn launch(
                 )),
                 Line::from(format!(
                     "Trace schema: v{}  |  Parallel: {}",
-                    metadata.witnessed.schema_version, metadata.witnessed.parallel
+                    view.metadata.witnessed.schema_version, view.metadata.witnessed.parallel
                 )),
                 Line::from(""),
                 Line::from(match pr_url.as_deref() {
@@ -159,45 +162,45 @@ pub fn launch(
 
             let mut artifact_text = vec![
                 Line::from("Artifacts:"),
-                Line::from(format!("meta.json → {}", manifest.meta_json)),
+                Line::from(format!("meta.json → {}", view.manifest.meta_json)),
             ];
-            if let Some(path) = &manifest.trace_jsonl {
+            if let Some(path) = &view.manifest.trace_jsonl {
                 artifact_text.push(Line::from(format!("trace.jsonl → {}", path)));
             }
-            if let Some(path) = &manifest.results_csv {
+            if let Some(path) = &view.manifest.results_csv {
                 artifact_text.push(Line::from(format!("results.csv → {}", path)));
             }
-            if let Some(path) = &manifest.results_json {
+            if let Some(path) = &view.manifest.results_json {
                 artifact_text.push(Line::from(format!("results.json → {}", path)));
             }
-            if let Some(path) = &manifest.summary_json {
+            if let Some(path) = &view.manifest.summary_json {
                 artifact_text.push(Line::from(format!("summary.json → {}", path)));
             }
-            if let Some(path) = &manifest.analysis_json {
+            if let Some(path) = &view.manifest.analysis_json {
                 artifact_text.push(Line::from(format!("analysis.json → {}", path)));
             }
-            if let Some(path) = &manifest.witness_root_txt {
+            if let Some(path) = &view.manifest.witness_root_txt {
                 artifact_text.push(Line::from(format!("witness_root.txt → {}", path)));
             }
-            if let Some(path) = &manifest.nix_provenance_json {
+            if let Some(path) = &view.manifest.nix_provenance_json {
                 artifact_text.push(Line::from(format!("nix_provenance.json → {}", path)));
             }
-            if let Some(path) = &manifest.agent_trace_json {
+            if let Some(path) = &view.manifest.agent_trace_json {
                 artifact_text.push(Line::from(format!("agent_trace.json → {}", path)));
             }
-            if let Some(path) = &manifest.tool_transcript_json {
+            if let Some(path) = &view.manifest.tool_transcript_json {
                 artifact_text.push(Line::from(format!("tool_transcript.json → {}", path)));
             }
-            if let Some(path) = &manifest.witness_manifest_json {
+            if let Some(path) = &view.manifest.witness_manifest_json {
                 artifact_text.push(Line::from(format!("witness_manifest.json → {}", path)));
             }
-            if let Some(path) = &manifest.hash_chain_txt {
+            if let Some(path) = &view.manifest.hash_chain_txt {
                 artifact_text.push(Line::from(format!("hash_chain.txt → {}", path)));
             }
-            if let Some(path) = &manifest.drift_report_json {
+            if let Some(path) = &view.manifest.drift_report_json {
                 artifact_text.push(Line::from(format!("drift_report.json → {}", path)));
             }
-            if let Some(path) = &manifest.chaos_profile_json {
+            if let Some(path) = &view.manifest.chaos_profile_json {
                 artifact_text.push(Line::from(format!("chaos_profile.json → {}", path)));
             }
             let artifact_block = Paragraph::new(artifact_text)
@@ -249,18 +252,21 @@ pub fn launch(
 }
 
 #[cfg(feature = "tui")]
-pub fn launch_agent(
-    theme: &str,
-    no_color: bool,
-    agent_name: &str,
-    run_id: u32,
-    seed: u64,
-    agent_trace: &[AgentTraceEntry],
-    tool_transcript: &ToolTranscriptRecord,
-    drift_report: &DriftReport,
-    replay_mode: bool,
-    manifest: &ArtifactManifest,
-) -> Result<()> {
+pub struct AgentLaunchView<'a> {
+    pub theme: &'a str,
+    pub no_color: bool,
+    pub agent_name: &'a str,
+    pub run_id: u32,
+    pub seed: u64,
+    pub agent_trace: &'a [AgentTraceEntry],
+    pub tool_transcript: &'a ToolTranscriptRecord,
+    pub drift_report: &'a DriftReport,
+    pub replay_mode: bool,
+    pub manifest: &'a ArtifactManifest,
+}
+
+#[cfg(feature = "tui")]
+pub fn launch_agent(view: AgentLaunchView<'_>) -> Result<()> {
     enable_raw_mode().context("enable raw mode")?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen).context("enter alternate screen")?;
@@ -268,8 +274,8 @@ pub fn launch_agent(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("create terminal")?;
 
-    let palette = Palette::from_theme(theme, no_color);
-    let warning_style = if drift_report.drifted {
+    let palette = Palette::from_theme(view.theme, view.no_color);
+    let warning_style = if view.drift_report.drifted {
         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(palette.accent)
@@ -295,10 +301,13 @@ pub fn launch_agent(
                         .fg(palette.secondary)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(format!("  •  Agent {}  •  Run {}", agent_name, run_id)),
-                Span::raw(format!("  •  Seed {}", seed)),
+                Span::raw(format!(
+                    "  •  Agent {}  •  Run {}",
+                    view.agent_name, view.run_id
+                )),
+                Span::raw(format!("  •  Seed {}", view.seed)),
             ];
-            if replay_mode {
+            if view.replay_mode {
                 title_spans.push(Span::raw("  •  "));
                 title_spans.push(Span::styled(
                     "REPLAY MODE",
@@ -307,7 +316,7 @@ pub fn launch_agent(
                         .add_modifier(Modifier::BOLD),
                 ));
             }
-            if drift_report.drifted {
+            if view.drift_report.drifted {
                 title_spans.push(Span::raw("  •  "));
                 title_spans.push(Span::styled("DRIFT DETECTED", warning_style));
             }
@@ -321,7 +330,7 @@ pub fn launch_agent(
                 .split(layout[1]);
 
             let mut timeline_lines = Vec::new();
-            for entry in agent_trace {
+            for entry in view.agent_trace {
                 timeline_lines.push(Line::from(format!(
                     "step {}: {} | {}",
                     entry.step, entry.thought, entry.action
@@ -341,7 +350,7 @@ pub fn launch_agent(
             frame.render_widget(timeline_block, body_layout[0]);
 
             let mut tool_lines = Vec::new();
-            for call in &tool_transcript.entries {
+            for call in &view.tool_transcript.entries {
                 let status = match &call.outcome {
                     crate::tooling::ToolOutcome::Ok { .. } => "ok",
                     crate::tooling::ToolOutcome::Err { .. } => "err",
@@ -366,24 +375,24 @@ pub fn launch_agent(
 
             let mut artifact_text = vec![
                 Line::from("Artifacts:"),
-                Line::from(format!("meta.json → {}", manifest.meta_json)),
+                Line::from(format!("meta.json → {}", view.manifest.meta_json)),
             ];
-            if let Some(path) = &manifest.agent_trace_json {
+            if let Some(path) = &view.manifest.agent_trace_json {
                 artifact_text.push(Line::from(format!("agent_trace.json → {}", path)));
             }
-            if let Some(path) = &manifest.tool_transcript_json {
+            if let Some(path) = &view.manifest.tool_transcript_json {
                 artifact_text.push(Line::from(format!("tool_transcript.json → {}", path)));
             }
-            if let Some(path) = &manifest.witness_manifest_json {
+            if let Some(path) = &view.manifest.witness_manifest_json {
                 artifact_text.push(Line::from(format!("witness_manifest.json → {}", path)));
             }
-            if let Some(path) = &manifest.hash_chain_txt {
+            if let Some(path) = &view.manifest.hash_chain_txt {
                 artifact_text.push(Line::from(format!("hash_chain.txt → {}", path)));
             }
-            if let Some(path) = &manifest.drift_report_json {
+            if let Some(path) = &view.manifest.drift_report_json {
                 artifact_text.push(Line::from(format!("drift_report.json → {}", path)));
             }
-            if let Some(path) = &manifest.chaos_profile_json {
+            if let Some(path) = &view.manifest.chaos_profile_json {
                 artifact_text.push(Line::from(format!("chaos_profile.json → {}", path)));
             }
             artifact_text.push(Line::from("Press q to exit."));

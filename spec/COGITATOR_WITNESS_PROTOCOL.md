@@ -45,13 +45,13 @@ This split is normative for current protocol behavior.
 
 ## 5) Canonicalization
 
-Witnessed bytes use Cogitator’s strict deterministic canonical JSON subset (JCS-style / I-JSON constrained):
+Witnessed bytes use Cogitator’s strict deterministic canonical JSON subset (JCS-style, integer-only I-JSON-oriented subset):
 
 - deterministic object-key ordering
 - deterministic UTF-8 serialization
 - integer-only witnessed numbers
 
-This is not a blanket claim of full RFC 8785 conformance across all JSON artifacts.
+This is not a blanket claim of full RFC 8785 conformance across all JSON artifacts or parser behaviors (for example, duplicate-key rejection is parser-dependent).
 
 Report and diagnostic files may use ordinary JSON where implementation does so.
 
@@ -106,7 +106,7 @@ Cogitator exposes three relevant verification modes:
 2. **Semantic witness recompute**: recompute root from witnessed semantics (metadata, trace, tool/phantom operations).
 3. **Anchored verification**: compare against externally supplied expected root (for example via `--expect`).
 
-A co-located `witness_root.txt` alone is not proof that the run originally occurred.
+A co-located `witness_root.txt` alone is not proof that the run originally occurred; it is only local self-consistency evidence unless compared against an external expected root.
 
 ## 11) Policy behavior (current)
 
@@ -140,4 +140,3 @@ Protocol-breaking changes (schema constants, witness event encoding, root algori
 - explicit verifier compatibility notes
 - test updates showing expected behavior changes
 
-No such protocol change is introduced in this documentation pass.

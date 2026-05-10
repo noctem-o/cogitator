@@ -1,6 +1,6 @@
 # Cogitator
 
-Cogitator is a Rust harness for producing deterministic, tamper-evident records of AI-agent runs.
+Cogitator is a Rust harness for deterministic, tamper-evident records of agent/tool execution.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/noctem-o/cogitator/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/noctem-o/cogitator/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
@@ -30,7 +30,7 @@ The project is a verifier/audit substrate. It is not a full agent framework and 
 | Tool transcript | Executed calls with outcomes and faults, plus policy digest when present. |
 | Phantom entries | Blocked/phantom tool requests are recorded and committed instead of silently dropped. |
 | Bundle verifier | Path confinement + artifact self-consistency checks on bundle contents. |
-| Replay/drift reports | Drift demos and replay checks to surface mismatches deterministically. |
+| Replay/drift reports | Deterministic diagnostics for fixture/replay mismatch analysis (report-only artifacts). |
 | Provenance split | Provenance is recorded separately and excluded from witness bytes. |
 | Nix provenance (optional) | `nix_provenance.json` is diagnostic/provenance-only and does not change witness root. |
 
@@ -54,10 +54,11 @@ Expected result:
 - verify reports no bundle issues
 - witness recompute reports `matched=true`
 
-## Record and verify an agent run
+## Record and verify a fixture-grade agent run
 
 ```bash
 cargo run --release -- run --agent ordeal --runs 1 --out-dir out --clean
+# NOTE: `ordeal` is a deterministic conformance fixture, not a scientific benchmark.
 ```
 
 ```bash
@@ -108,7 +109,7 @@ Agent step
 
 ## Verification model
 
-Cogitator verification has three layers:
+Cogitator verification has three recomputation-backed layers:
 
 1. **Bundle self-consistency**: manifest paths + diagnostic artifact hashes.
 2. **Semantic witness recompute**: recompute root from witnessed semantics.
@@ -175,6 +176,18 @@ Cogitator does not by itself provide:
 - proof that a run happened unless root is externally anchored
 - hardware/runtime attestation
 - deterministic LLM outputs for nondeterministic backends
+
+## Ordeal fixture guardrail
+
+`ordeal` currently executes a fixed 50-task suite with deterministic stubbed tool responses and schema-fingerprint checks. It is valuable as a conformance/tamper fixture and golden-root guard, but it is **not** evidence of general agent robustness or benchmark-grade performance.
+
+## Proves vs does not prove
+
+| Cogitator output | Proves | Does not prove |
+|---|---|---|
+| Matching witness root under semantic recompute | Bundle semantics match the witnessed commitment boundary. | That the execution was externally anchored in time/public logs. |
+| Anchored verification (`--expect`) | Bundle semantics match an externally provided root. | Hardware/runtime integrity of original execution. |
+| Passing ordeal fixture run | Deterministic fixture wiring stayed stable (trace/transcript/schema-fingerprint path). | Scientific benchmark validity or real tool-semantic quality. |
 
 ## Development
 
