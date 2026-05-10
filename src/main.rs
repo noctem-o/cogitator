@@ -72,7 +72,7 @@ mod tui;
 #[command(
     name = "cogitator",
     version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("COGITATOR_GIT_SHA"), ")"),
-    about = "Deterministic evaluation harness"
+    about = "Deterministic witness/provenance harness"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -84,6 +84,7 @@ pub enum CommandLine {
     Run(RunArgs),
     Verify(VerifyArgs),
     Demo(DemoArgs),
+    #[command(about = "Deterministic conformance fixture checks for the ordeal path")]
     Ordeal(OrdealArgs),
 }
 
@@ -225,7 +226,7 @@ pub struct RunArgs {
         long,
         group = "agent_mode",
         value_parser = ["clawdbot", "ordeal"],
-        help = "Agent name (clawdbot or ordeal)"
+        help = "Agent name (clawdbot or ordeal; ordeal is a deterministic fixture harness, not a benchmark)"
     )]
     pub agent: Option<String>,
 
@@ -294,7 +295,7 @@ pub struct RunArgs {
         long,
         requires = "agent_mode",
         default_value_if("agent_mode", ArgPredicate::IsPresent, "0.5"),
-        help = "Agent/replay only; stored as canonical string in witness metadata for ordeal runs"
+        help = "Agent/replay only; stored as canonical string in witness metadata for ordeal fixture runs"
     )]
     pub pass_threshold: Option<String>,
 
@@ -474,16 +475,16 @@ fn run(args: RunArgs) -> Result<()> {
     let tui_enabled = !args.no_tui && cfg!(feature = "tui");
     if tui_enabled {
         #[cfg(feature = "tui")]
-        tui::launch(
-            args.theme.as_str(),
-            args.no_color,
-            args.seed,
-            run_ids.len() as u32,
-            &output.results,
-            &summary,
-            &metadata,
-            &manifest,
-        )?;
+        tui::launch(tui::LaunchView {
+            theme: args.theme.as_str(),
+            no_color: args.no_color,
+            seed: args.seed,
+            runs: run_ids.len() as u32,
+            results: &output.results,
+            summary: &summary,
+            metadata: &metadata,
+            manifest: &manifest,
+        })?;
     } else {
         if !args.no_tui {
             println!("TUI disabled (missing feature).");
@@ -1047,18 +1048,18 @@ fn run_agent(args: RunArgs) -> Result<()> {
 
             if tui_enabled && single_run {
                 #[cfg(feature = "tui")]
-                tui::launch_agent(
-                    args.theme.as_str(),
-                    args.no_color,
-                    &agent_name,
+                tui::launch_agent(tui::AgentLaunchView {
+                    theme: args.theme.as_str(),
+                    no_color: args.no_color,
+                    agent_name: &agent_name,
                     run_id,
-                    args.seed,
-                    &agent_trace,
-                    &transcript_record,
-                    &drift_report,
-                    args.replay.is_some(),
-                    &_manifest,
-                )?;
+                    seed: args.seed,
+                    agent_trace: &agent_trace,
+                    tool_transcript: &transcript_record,
+                    drift_report: &drift_report,
+                    replay_mode: args.replay.is_some(),
+                    manifest: &_manifest,
+                })?;
             } else if !tui_enabled && single_run && !args.no_tui {
                 println!("TUI disabled (missing feature).");
             }
@@ -1187,7 +1188,7 @@ fn ordeal_check_cmd(args: OrdealCheckArgs) -> Result<()> {
     if args.update_golden {
         io_utils::write_atomic_string(
             &args.golden,
-            "ordeal golden witness root",
+            "ordeal fixture golden witness root",
             &(actual.clone() + "\n"),
         )?;
         println!("Updated golden {} with {}", args.golden.display(), actual);
@@ -1197,13 +1198,13 @@ fn ordeal_check_cmd(args: OrdealCheckArgs) -> Result<()> {
     let expected = read_trimmed(&args.golden)?;
     if expected != actual {
         anyhow::bail!(
-            "ordeal witness root drift detected: expected {} actual {} (use --update-golden for intentional changes)",
+            "ordeal fixture witness root drift detected: expected {} actual {} (use --update-golden for intentional changes)",
             expected,
             actual
         );
     }
 
-    println!("Ordeal witness root matches golden {}", actual);
+    println!("Ordeal fixture witness root matches golden {}", actual);
     Ok(())
 }
 
