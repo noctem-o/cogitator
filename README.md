@@ -11,7 +11,7 @@ Cogitator is a Rust harness for deterministic, tamper-evident records of agent/t
 
 **Navigation:** [Quick start](#quick-start) · [Verification model](#verification-model) · [Policy interception](#policy-interception) · [Protocol](spec/COGITATOR_WITNESS_PROTOCOL.md) · [Threat model](#design-notes--threat-model) · [Development](#development)
 
-Each run emits a witness root, a replay bundle, and a policy-aware tool transcript. The witness root is computed from canonical witnessed semantics (not from report files), and blocked/phantom operations are recorded explicitly.
+Each run emits a witness root, a replayable run bundle, and a policy-aware tool transcript. The witness root is computed from canonical witnessed semantics (not from report files), and blocked/phantom operations are recorded explicitly.
 
 ## Why it exists
 
@@ -26,7 +26,7 @@ The project is a verifier/audit substrate. It is not a full agent framework and 
 | Capability | What it means in practice |
 |---|---|
 | Witness root | Domain-separated BLAKE3 commitment over witnessed metadata, agent trace entries, and tool/phantom operations. |
-| Strict canonical witnessed bytes | Deterministic canonical JSON subset for committed bytes (JCS-style / I-JSON constrained). |
+| Strict canonical witnessed bytes | Deterministic canonical JSON subset for committed bytes (JCS-style, integer-only I-JSON-oriented subset). |
 | Tool transcript | Executed calls with outcomes and faults, plus policy digest when present. |
 | Phantom entries | Blocked/phantom tool requests are recorded and committed instead of silently dropped. |
 | Bundle verifier | Path confinement + artifact self-consistency checks on bundle contents. |
@@ -135,7 +135,7 @@ out/run_0000/
 ├── hash_chain.txt
 ├── witness_manifest.json
 ├── witness_root.txt
-├── verify_report.json
+├── verify_report.json # after verify
 └── nix_provenance.json        # optional
 ```
 
@@ -154,7 +154,7 @@ Committed into witness root:
 - canonicalized `agent_trace` entry semantics
 - canonicalized executed tool-call witness view
 - canonicalized phantom/intercepted witness view
-- policy digest when present in transcript
+- policy digest when a policy is loaded
 - chaos/fault information when represented in committed tool outcomes
 
 Not committed into witness root:
