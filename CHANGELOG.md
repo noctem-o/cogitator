@@ -4,6 +4,12 @@ All notable changes to Cogitator are documented in this file.
 
 ## Unreleased
 
+## 2.2.1 - 2026-05-15
+
+### Changed
+- Bumped crate version to `2.2.1` for release preparation.
+- README wording nits only: replayable run bundle phrasing, policy-digest wording, verifier artifact annotation, and canonicalization terminology alignment.
+
 ## 2.0.0 - 2026-04-09
 
 ### Added
