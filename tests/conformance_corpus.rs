@@ -39,7 +39,7 @@ fn duplicate_keys_are_parser_dependent_and_currently_last_wins() {
 #[test]
 fn verify_recompute_ignores_report_only_file_mutation() {
     let temp = TempDir::new().unwrap();
-    std::process::Command::new(env!("CARGO_BIN_EXE_cogitator"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cogitator"))
         .args([
             "run",
             "--agent",
@@ -50,10 +50,22 @@ fn verify_recompute_ignores_report_only_file_mutation() {
             temp.path().to_str().unwrap(),
             "--clean",
         ])
-        .status()
+        .output()
         .expect("run command");
+    assert!(
+        output.status.success(),
+        "cogitator run failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let bundle = temp.path().join("run_0000");
+    assert!(
+        bundle.exists(),
+        "expected bundle directory to exist at {}",
+        bundle.display()
+    );
     let report_path = bundle.join("verify_report.json");
     fs::write(&report_path, "{\"tampered\":true}\n").unwrap();
 

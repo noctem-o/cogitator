@@ -8,7 +8,8 @@
 //! - `Phantom` — do not execute; record as a `PhantomEntry` with `phantom` disposition
 //!   (semantically: the agent tried, the harness observed, no side-effect)
 //!
-//! The policy file path is embedded as a SHA-256 digest into `WitnessedMetadata`
+//! The loaded policy document bytes are hashed with SHA-256, and that digest is
+//! embedded into `WitnessedMetadata`
 //! so the exact policy version is part of the witness root.
 //!
 //! # Normalisation
