@@ -173,7 +173,10 @@ pub struct DemoDriftArgs {
     #[arg(long, default_value_t = 1)]
     pub threads: usize,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Clean output dir first; refuses dangerous paths (. , root, home, .git, symlinks)"
+    )]
     pub clean: bool,
 }
 
@@ -199,7 +202,10 @@ pub struct RunArgs {
     #[arg(long, default_value = "out")]
     pub out_dir: PathBuf,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Clean output dir first; refuses dangerous paths (. , root, home, .git, symlinks)"
+    )]
     pub clean: bool,
 
     #[arg(long)]
@@ -314,7 +320,7 @@ pub struct RunArgs {
         long,
         default_value = "auto",
         value_enum,
-        help = "Capture Nix provenance (auto|on|off)"
+        help = "Capture Nix provenance (auto|on|off). auto/on may run bounded local nix commands for diagnostic provenance only"
     )]
     pub nix_provenance: nix_provenance::NixProvenanceMode,
 }
@@ -385,7 +391,7 @@ fn run(args: RunArgs) -> Result<()> {
     let (summary, pass_count, fail_count) = eval::summarize_with_counts(&output.results);
 
     if args.clean && args.out_dir.exists() {
-        fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean output dir")?;
+        safe_clean_output_dir(&args.out_dir, "output dir")?;
     }
 
     fs::create_dir_all(&args.out_dir).with_context(|| "failed to create output dir")?;
@@ -527,7 +533,7 @@ fn demo_cmd(args: DemoArgs) -> Result<()> {
 
 fn demo_drift(args: DemoDriftArgs) -> Result<()> {
     if args.clean && args.out_dir.exists() {
-        fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean demo output dir")?;
+        safe_clean_output_dir(&args.out_dir, "demo output dir")?;
     }
     fs::create_dir_all(&args.out_dir).with_context(|| "failed to create demo output dir")?;
 
@@ -780,7 +786,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
 
     thread_pool.install(|| -> Result<()> {
         if args.clean && args.out_dir.exists() {
-            fs::remove_dir_all(&args.out_dir).with_context(|| "failed to clean output dir")?;
+            safe_clean_output_dir(&args.out_dir, "output dir")?;
         }
         fs::create_dir_all(&args.out_dir).with_context(|| "failed to create output dir")?;
 
@@ -1616,6 +1622,66 @@ fn command_version(command: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn safe_clean_output_dir(path: &Path, label: &str) -> Result<()> {
+    validate_clean_output_dir(path, Path::new("."))?;
+    fs::remove_dir_all(path).with_context(|| format!("failed to clean {}", label))?;
+    Ok(())
+}
+
+fn validate_clean_output_dir(path: &Path, repo_root: &Path) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        anyhow::bail!("refusing to clean an empty output path");
+    }
+    if path == Path::new(".") {
+        anyhow::bail!("refusing to clean current directory '.'");
+    }
+
+    let candidate = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if candidate.parent().is_none() {
+        anyhow::bail!("refusing to clean filesystem root");
+    }
+
+    if let Ok(repo_canon) = repo_root.canonicalize() {
+        if candidate == repo_canon {
+            anyhow::bail!("refusing to clean repository root");
+        }
+    }
+
+    if let Some(home) = user_home_dir() {
+        if candidate == home {
+            anyhow::bail!("refusing to clean user home directory");
+        }
+    }
+
+    if let Some(name) = candidate
+        .file_name()
+        .or_else(|| path.file_name())
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+    {
+        if name == ".git" {
+            anyhow::bail!("refusing to clean git metadata directory");
+        }
+    }
+
+    if let Ok(metadata) = fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!("refusing to clean symlink output directory");
+        }
+    }
+    Ok(())
+}
+
+fn user_home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
 fn read_trimmed(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path).with_context(|| "failed to read witness file")?;
     Ok(content.trim().to_string())
@@ -1623,8 +1689,11 @@ fn read_trimmed(path: &Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_ordeal_regress, resolve_replay_artifact_path, Cli};
+    use super::{
+        resolve_ordeal_regress, resolve_replay_artifact_path, validate_clean_output_dir, Cli,
+    };
     use clap::Parser;
+    use std::path::Path;
     use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
@@ -1724,5 +1793,36 @@ mod tests {
             resolve_replay_artifact_path(bundle.path(), "agent_trace.json", "agent_trace.json")
                 .expect("resolve inside bundle");
         assert!(resolved.ends_with("agent_trace.json"));
+    }
+
+    #[test]
+    fn clean_guard_rejects_dangerous_paths() {
+        assert!(validate_clean_output_dir(Path::new("."), Path::new(".")).is_err());
+        assert!(validate_clean_output_dir(Path::new("/"), Path::new(".")).is_err());
+        assert!(validate_clean_output_dir(Path::new(".git"), Path::new(".")).is_err());
+        assert!(validate_clean_output_dir(Path::new(""), Path::new(".")).is_err());
+    }
+
+    #[test]
+    fn clean_guard_allows_normal_output_paths() {
+        let tmp = tempdir().expect("tempdir");
+        let repo_root = tmp.path().join("repo");
+        let out_dir = repo_root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        validate_clean_output_dir(&out_dir, &repo_root).expect("safe output dir");
+    }
+
+    #[test]
+    fn clean_guard_rejects_symlink_dirs() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let tmp = tempdir().expect("tempdir");
+            let target = tmp.path().join("target");
+            let link = tmp.path().join("link");
+            std::fs::create_dir_all(&target).expect("create target");
+            symlink(&target, &link).expect("create symlink");
+            assert!(validate_clean_output_dir(&link, Path::new(".")).is_err());
+        }
     }
 }
