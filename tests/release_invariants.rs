@@ -137,8 +137,12 @@ fn verify_witness_bundle_recomputes_hashes() {
     canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")
         .expect("drift_report.json");
 
-    let chain =
-        drift::build_hash_chain(&agent_trace, &transcript.entries).expect("build hash chain");
+    let chain = drift::build_hash_chain(
+        &agent_trace,
+        &transcript.entries,
+        &transcript.phantom_entries,
+    )
+    .expect("build hash chain");
     fs::write(&hash_chain_path, chain.join("\n") + "\n").expect("hash_chain.txt");
 
     let witness_root = trace::compute_agent_witness_root(

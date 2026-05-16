@@ -592,8 +592,11 @@ fn demo_drift(args: DemoDriftArgs) -> Result<()> {
             let tool_transcript_path = scenario_dir.join("tool_transcript.json");
             tooling::write_transcript(&tool_transcript_path, &demo_run.transcript)?;
 
-            let hash_chain =
-                drift::build_hash_chain(&demo_run.agent_trace, &demo_run.transcript.entries)?;
+            let hash_chain = drift::build_hash_chain(
+                &demo_run.agent_trace,
+                &demo_run.transcript.entries,
+                &demo_run.transcript.phantom_entries,
+            )?;
             let hash_chain_path = scenario_dir.join("hash_chain.txt");
             io_utils::write_atomic_string(
                 &hash_chain_path,
@@ -879,8 +882,7 @@ fn run_agent(args: RunArgs) -> Result<()> {
             let mut tool_transcript = if let Some((_, transcript, _)) = replay_bundle.as_ref() {
                 tooling::ToolTranscript::new_replay(transcript.clone())
             } else {
-                tooling::ToolTranscript::new_live(chaos_engine)
-                    .with_policy(policy::PolicyEngine::load(&args.policy)?)
+                tooling::ToolTranscript::new_live(chaos_engine).with_policy(policy_engine.clone())
             };
 
             let mut agent_trace = Vec::new();
@@ -944,7 +946,11 @@ fn run_agent(args: RunArgs) -> Result<()> {
             let tool_transcript_path = run_dir.join("tool_transcript.json");
             tooling::write_transcript(&tool_transcript_path, &transcript_record)?;
 
-            let hash_chain = drift::build_hash_chain(&agent_trace, &transcript_record.entries)?;
+            let hash_chain = drift::build_hash_chain(
+                &agent_trace,
+                &transcript_record.entries,
+                &transcript_record.phantom_entries,
+            )?;
             let hash_chain_path = run_dir.join("hash_chain.txt");
             io_utils::write_atomic_string(
                 &hash_chain_path,

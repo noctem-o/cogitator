@@ -126,7 +126,7 @@ impl CallHistory {
 
 // ─── Engine ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PolicyEngine {
     pub document: PolicyDocument,
     pub digest: String,
@@ -222,7 +222,7 @@ impl PolicyEngine {
 // Patterns and inputs are always lowercased before reaching these functions.
 //
 // Rules:
-//   *   matches one or more characters within a single dot-separated segment
+//   *   matches zero or more characters within a single dot-separated segment
 //       (will not consume a '.')
 //   **  matches any sequence of characters including '.' (crosses segment
 //       boundaries), matching zero or more characters
@@ -379,6 +379,7 @@ mod tests {
         assert!(tool_name_matches("trade.*", "trade.buy"));
         assert!(!tool_name_matches("trade.*", "trade.buy.v2"));
         assert!(tool_name_matches("trade.**", "trade.buy.v2"));
+        assert!(tool_name_matches("trade.*", "trade."));
     }
 
     // ── Budget guard ─────────────────────────────────────────────────────────

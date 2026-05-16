@@ -15,6 +15,10 @@ pub enum DriftIssue {
         expected: u32,
         actual: u32,
     },
+    PolicyDigestMismatch {
+        expected: String,
+        actual: String,
+    },
     ToolStepMismatch {
         index: u32,
         expected: u32,
@@ -32,6 +36,36 @@ pub enum DriftIssue {
         index: u32,
     },
     ToolFaultMismatch {
+        index: u32,
+    },
+    PhantomLengthMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    PhantomStepMismatch {
+        index: u32,
+        expected: u32,
+        actual: u32,
+    },
+    PhantomToolCallIndexMismatch {
+        index: u32,
+        expected: u32,
+        actual: u32,
+    },
+    PhantomRequestMismatch {
+        index: u32,
+    },
+    PhantomDispositionMismatch {
+        index: u32,
+        expected: String,
+        actual: String,
+    },
+    PhantomRuleMismatch {
+        index: u32,
+        expected: Option<String>,
+        actual: Option<String>,
+    },
+    PhantomReasonMismatch {
         index: u32,
     },
     UnexpectedToolRequest {

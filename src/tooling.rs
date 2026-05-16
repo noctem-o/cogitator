@@ -167,7 +167,7 @@ impl Default for ToolTranscriptRecord {
 
 pub struct ToolTranscript {
     mode: ToolMode,
-    expected: Vec<ToolCall>,
+    expected: Vec<ExpectedOperation>,
     recorded: Vec<ToolCall>,
     phantom_recorded: Vec<PhantomEntry>,
     cursor: usize,
@@ -176,6 +176,12 @@ pub struct ToolTranscript {
     next_call_idx: u32,
     policy: PolicyEngine,
     history: CallHistory,
+}
+
+#[derive(Debug, Clone)]
+enum ExpectedOperation {
+    Executed(ToolCall),
+    Phantom(PhantomEntry),
 }
 
 impl ToolTranscript {
@@ -195,9 +201,21 @@ impl ToolTranscript {
     }
 
     pub fn new_replay(expected: ToolTranscriptRecord) -> Self {
+        let mut expected_ops = Vec::new();
+        for entry in expected.entries {
+            expected_ops.push(ExpectedOperation::Executed(entry));
+        }
+        for phantom in expected.phantom_entries {
+            expected_ops.push(ExpectedOperation::Phantom(phantom));
+        }
+        expected_ops.sort_by_key(|op| match op {
+            ExpectedOperation::Executed(call) => call.tool_call_idx,
+            ExpectedOperation::Phantom(entry) => entry.tool_call_idx,
+        });
+
         Self {
             mode: ToolMode::Replay,
-            expected: expected.entries,
+            expected: expected_ops,
             recorded: Vec::new(),
             phantom_recorded: Vec::new(),
             cursor: 0,
@@ -353,31 +371,69 @@ impl ToolTranscript {
                 let expected_entry = self.expected.get(self.cursor);
 
                 let response = if let Some(expected) = expected_entry {
-                    if expected.step != step {
-                        self.mismatches.push(DriftIssue::ToolStepMismatch {
-                            index: self.cursor as u32,
-                            expected: expected.step,
-                            actual: step,
-                        });
-                    }
+                    match expected {
+                        ExpectedOperation::Executed(expected) => {
+                            if expected.step != step {
+                                self.mismatches.push(DriftIssue::ToolStepMismatch {
+                                    index: self.cursor as u32,
+                                    expected: expected.step,
+                                    actual: step,
+                                });
+                            }
 
-                    if expected.tool_call_idx != tool_call_idx {
-                        self.mismatches.push(DriftIssue::ToolCallIndexMismatch {
-                            index: self.cursor as u32,
-                            expected: expected.tool_call_idx,
-                            actual: tool_call_idx,
-                        });
-                    }
+                            if expected.tool_call_idx != tool_call_idx {
+                                self.mismatches.push(DriftIssue::ToolCallIndexMismatch {
+                                    index: self.cursor as u32,
+                                    expected: expected.tool_call_idx,
+                                    actual: tool_call_idx,
+                                });
+                            }
 
-                    if expected.tool_name != request.tool_name
-                        || expected.request != request.arguments
-                    {
-                        self.mismatches.push(DriftIssue::ToolRequestMismatch {
-                            index: self.cursor as u32,
-                        });
-                    }
+                            if expected.tool_name != request.tool_name
+                                || expected.request != request.arguments
+                            {
+                                self.mismatches.push(DriftIssue::ToolRequestMismatch {
+                                    index: self.cursor as u32,
+                                });
+                            }
 
-                    response_from_outcome(&expected.tool_name, &expected.outcome)
+                            response_from_outcome(&expected.tool_name, &expected.outcome)
+                        }
+                        ExpectedOperation::Phantom(expected) => {
+                            if expected.step != step {
+                                self.mismatches.push(DriftIssue::PhantomStepMismatch {
+                                    index: self.cursor as u32,
+                                    expected: expected.step,
+                                    actual: step,
+                                });
+                            }
+                            if expected.tool_call_idx != tool_call_idx {
+                                self.mismatches
+                                    .push(DriftIssue::PhantomToolCallIndexMismatch {
+                                        index: self.cursor as u32,
+                                        expected: expected.tool_call_idx,
+                                        actual: tool_call_idx,
+                                    });
+                            }
+                            if expected.tool_name != request.tool_name
+                                || expected.request != request.arguments
+                            {
+                                self.mismatches.push(DriftIssue::PhantomRequestMismatch {
+                                    index: self.cursor as u32,
+                                });
+                            }
+                            self.phantom_recorded.push(expected.clone());
+                            ToolResponse {
+                                tool_name: request.tool_name.clone(),
+                                output: serde_json::json!({
+                                    "blocked": true,
+                                    "reason": expected.reason,
+                                }),
+                                success: false,
+                                simulated_latency_ms: None,
+                            }
+                        }
+                    }
                 } else {
                     self.mismatches.push(DriftIssue::UnexpectedToolRequest {
                         index: self.cursor as u32,
@@ -385,20 +441,25 @@ impl ToolTranscript {
                     stub_response(&request)
                 };
 
-                let (outcome, fault) = if let Some(expected) = expected_entry {
-                    (expected.outcome.clone(), expected.fault.clone())
-                } else {
-                    (outcome_from_response(&response, None), None)
-                };
-
-                self.recorded.push(ToolCall {
-                    step,
-                    tool_call_idx,
-                    tool_name: request.tool_name.clone(),
-                    request: request.arguments.clone(),
-                    outcome,
-                    fault,
-                });
+                if let Some(ExpectedOperation::Executed(expected)) = expected_entry {
+                    self.recorded.push(ToolCall {
+                        step,
+                        tool_call_idx,
+                        tool_name: request.tool_name.clone(),
+                        request: request.arguments.clone(),
+                        outcome: expected.outcome.clone(),
+                        fault: expected.fault.clone(),
+                    });
+                } else if expected_entry.is_none() {
+                    self.recorded.push(ToolCall {
+                        step,
+                        tool_call_idx,
+                        tool_name: request.tool_name.clone(),
+                        request: request.arguments.clone(),
+                        outcome: outcome_from_response(&response, None),
+                        fault: None,
+                    });
+                }
 
                 self.cursor += 1;
 

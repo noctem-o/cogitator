@@ -81,7 +81,11 @@ fn write_bundle(dir: &std::path::Path, call: ToolCall) -> anyhow::Result<String>
     canonical_json::write_json(&tool_transcript_path, &transcript, "tool_transcript.json")?;
     canonical_json::write_json(&drift_report_path, &drift_report, "drift_report.json")?;
 
-    let chain = drift::build_hash_chain(&agent_trace, &transcript.entries)?;
+    let chain = drift::build_hash_chain(
+        &agent_trace,
+        &transcript.entries,
+        &transcript.phantom_entries,
+    )?;
     fs::write(&hash_chain_path, chain.join("\n") + "\n")?;
 
     let witness_root = trace::compute_agent_witness_root(

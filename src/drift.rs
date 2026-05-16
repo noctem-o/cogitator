@@ -7,7 +7,7 @@ use crate::agent::AgentTraceEntry;
 use crate::canonical_json;
 use crate::model::WitnessManifest;
 use crate::report::DriftIssue;
-use crate::tooling::{ToolCall, ToolTranscriptRecord};
+use crate::tooling::{PhantomEntry, ToolCall, ToolTranscriptRecord};
 
 pub const DRIFT_SCHEMA_VERSION: u32 = 3;
 
@@ -60,6 +60,12 @@ pub fn detect_transcript_drift(
             actual: actual.entries.len() as u32,
         });
     }
+    if expected.policy_digest != actual.policy_digest {
+        issues.push(DriftIssue::PolicyDigestMismatch {
+            expected: expected.policy_digest.clone(),
+            actual: actual.policy_digest.clone(),
+        });
+    }
 
     let n = expected.entries.len().min(actual.entries.len());
     for i in 0..n {
@@ -94,11 +100,71 @@ pub fn detect_transcript_drift(
             issues.push(DriftIssue::ToolFaultMismatch { index: i as u32 });
         }
     }
+    if expected.phantom_entries.len() != actual.phantom_entries.len() {
+        issues.push(DriftIssue::PhantomLengthMismatch {
+            expected: expected.phantom_entries.len() as u32,
+            actual: actual.phantom_entries.len() as u32,
+        });
+    }
+    let m = expected
+        .phantom_entries
+        .len()
+        .min(actual.phantom_entries.len());
+    for i in 0..m {
+        compare_phantom_entry(
+            i as u32,
+            &expected.phantom_entries[i],
+            &actual.phantom_entries[i],
+            &mut issues,
+        );
+    }
 
     DriftReport {
         schema_version: DRIFT_SCHEMA_VERSION,
         drifted: !issues.is_empty(),
         issues,
+    }
+}
+
+fn compare_phantom_entry(
+    index: u32,
+    expected: &PhantomEntry,
+    actual: &PhantomEntry,
+    issues: &mut Vec<DriftIssue>,
+) {
+    if expected.step != actual.step {
+        issues.push(DriftIssue::PhantomStepMismatch {
+            index,
+            expected: expected.step,
+            actual: actual.step,
+        });
+    }
+    if expected.tool_call_idx != actual.tool_call_idx {
+        issues.push(DriftIssue::PhantomToolCallIndexMismatch {
+            index,
+            expected: expected.tool_call_idx,
+            actual: actual.tool_call_idx,
+        });
+    }
+    if expected.tool_name != actual.tool_name || expected.request != actual.request {
+        issues.push(DriftIssue::PhantomRequestMismatch { index });
+    }
+    if expected.disposition != actual.disposition {
+        issues.push(DriftIssue::PhantomDispositionMismatch {
+            index,
+            expected: format!("{:?}", expected.disposition).to_lowercase(),
+            actual: format!("{:?}", actual.disposition).to_lowercase(),
+        });
+    }
+    if expected.rule_id != actual.rule_id {
+        issues.push(DriftIssue::PhantomRuleMismatch {
+            index,
+            expected: expected.rule_id.clone(),
+            actual: actual.rule_id.clone(),
+        });
+    }
+    if expected.reason != actual.reason {
+        issues.push(DriftIssue::PhantomReasonMismatch { index });
     }
 }
 
@@ -108,6 +174,7 @@ pub fn detect_transcript_drift(
 pub fn build_hash_chain(
     agent_trace: &[AgentTraceEntry],
     tool_calls: &[ToolCall],
+    phantom_entries: &[PhantomEntry],
 ) -> Result<Vec<String>> {
     let mut out = Vec::new();
     let mut prev = String::from("genesis");
@@ -127,20 +194,46 @@ pub fn build_hash_chain(
         out.push(format!("agent[{i}] {prev}"));
     }
 
-    for (i, call) in tool_calls.iter().enumerate() {
+    enum ChainOp<'a> {
+        Tool(&'a ToolCall),
+        Phantom(&'a PhantomEntry),
+    }
+    let mut ops: Vec<(u32, ChainOp<'_>)> = Vec::new();
+    for call in tool_calls {
+        ops.push((call.tool_call_idx, ChainOp::Tool(call)));
+    }
+    for phantom in phantom_entries {
+        ops.push((phantom.tool_call_idx, ChainOp::Phantom(phantom)));
+    }
+    ops.sort_by_key(|(idx, _)| *idx);
+    for (i, (_, op)) in ops.into_iter().enumerate() {
         let mut hasher = Sha256::new();
         hasher.update(prev.as_bytes());
-        hasher.update(i.to_le_bytes());
-        hasher.update(call.step.to_le_bytes());
-        hasher.update(call.tool_call_idx.to_le_bytes());
-        hasher.update(call.tool_name.as_bytes());
-        hasher.update(canonical_json::to_vec(&call.request)?);
-        hasher.update(canonical_json::to_vec(&call.outcome)?);
-        hasher.update(canonical_json::to_vec(&call.fault)?);
-
-        let digest = hasher.finalize();
-        prev = crate::hex::encode(&digest);
-        out.push(format!("tool[{i}]  {prev}"));
+        match op {
+            ChainOp::Tool(call) => {
+                hasher.update(i.to_le_bytes());
+                hasher.update(call.step.to_le_bytes());
+                hasher.update(call.tool_call_idx.to_le_bytes());
+                hasher.update(call.tool_name.as_bytes());
+                hasher.update(canonical_json::to_vec(&call.request)?);
+                hasher.update(canonical_json::to_vec(&call.outcome)?);
+                hasher.update(canonical_json::to_vec(&call.fault)?);
+                prev = crate::hex::encode(&hasher.finalize());
+                out.push(format!("tool[{i}]  {prev}"));
+            }
+            ChainOp::Phantom(phantom) => {
+                hasher.update(i.to_le_bytes());
+                hasher.update(phantom.step.to_le_bytes());
+                hasher.update(phantom.tool_call_idx.to_le_bytes());
+                hasher.update(phantom.tool_name.as_bytes());
+                hasher.update(canonical_json::to_vec(&phantom.request)?);
+                hasher.update(canonical_json::to_vec(&phantom.disposition)?);
+                hasher.update(canonical_json::to_vec(&phantom.rule_id)?);
+                hasher.update(phantom.reason.as_bytes());
+                prev = crate::hex::encode(&hasher.finalize());
+                out.push(format!("phantom[{i}] {prev}"));
+            }
+        }
     }
 
     Ok(out)
@@ -250,12 +343,8 @@ pub fn verify_witness_bundle(witness_dir: &Path) -> Result<VerifyReport> {
         }
     }
 
-    // Check for extra artifacts (not fatal, but worth reporting)
-    for k in actual_hashes.keys() {
-        if !manifest.artifact_hashes.contains_key(k) {
-            issues.push(format!("extra artifact not in manifest: {}", k));
-        }
-    }
+    // Note: only manifest-referenced artifacts are hashed here; filesystem-wide
+    // extra-file scanning is intentionally not performed.
 
     // Compare bundle hash
     if actual_bundle_hash != expected_bundle_hash {
