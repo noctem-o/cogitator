@@ -2,11 +2,14 @@ use anyhow::{Context, Result};
 use clap::ValueEnum;
 use serde_json::Value;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::model::NixProvenance;
 
 const MAX_OUTPUT_BYTES: usize = 128 * 1024;
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(ValueEnum, Clone, Debug)]
 pub enum NixProvenanceMode {
@@ -99,7 +102,7 @@ fn current_system_info() -> Option<Value> {
 }
 
 fn command_output(command: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(command).args(args).output().ok()?;
+    let output = run_bounded_command(command, args, None).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -115,18 +118,73 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
 }
 
 fn command_json(command: &str, args: &[&str], cwd: Option<&Path>) -> Option<Value> {
-    let mut cmd = Command::new(command);
-    cmd.args(args);
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
-    let output = cmd.output().ok()?;
+    let output = run_bounded_command(command, args, cwd).ok()?;
     if !output.status.success() || output.stdout.len() > MAX_OUTPUT_BYTES {
         return None;
     }
     serde_json::from_slice(&output.stdout)
         .ok()
         .map(canonicalize_json)
+}
+
+fn run_bounded_command(
+    command: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+) -> std::io::Result<std::process::Output> {
+    let mut cmd = Command::new(command);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+
+    for key in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "GITHUB_TOKEN",
+        "NIX_CONFIG",
+    ] {
+        cmd.env_remove(key);
+    }
+
+    let mut child = cmd.spawn()?;
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    loop {
+        if child.try_wait()?.is_some() {
+            let mut output = child.wait_with_output()?;
+            truncate_output(&mut output.stdout);
+            truncate_output(&mut output.stderr);
+            return Ok(output);
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "nix provenance command timed out",
+            ));
+        }
+
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn truncate_output(bytes: &mut Vec<u8>) {
+    if bytes.len() > MAX_OUTPUT_BYTES {
+        bytes.truncate(MAX_OUTPUT_BYTES);
+    }
 }
 
 fn canonicalize_json(value: Value) -> Value {
@@ -149,4 +207,16 @@ pub fn write_nix_provenance(path: &Path, provenance: &NixProvenance) -> Result<(
     crate::canonical_json::write_json(path, provenance, "nix_provenance.json")
         .with_context(|| "failed to write nix_provenance.json")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_bounded_command;
+
+    #[test]
+    #[cfg(unix)]
+    fn bounded_command_times_out() {
+        let err = run_bounded_command("sh", &["-c", "sleep 10"], None).expect_err("must timeout");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+    }
 }
