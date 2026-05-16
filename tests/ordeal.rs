@@ -1,5 +1,6 @@
 use cogitator::model::WitnessedMetadata;
 use cogitator::ordeal::{OrdealConfig, TaskSuite, ORDEAL_TASKS_PATH};
+use cogitator::policy::PolicyEngine;
 use cogitator::report::DriftIssue;
 use cogitator::tooling::ToolTranscript;
 use cogitator::{drift, trace};
@@ -209,4 +210,71 @@ fn ordeal_run_dir(root: &std::path::Path) -> std::path::PathBuf {
         out_ci.display()
     );
     run_dirs.remove(0)
+}
+
+fn write_policy(dir: &std::path::Path, contents: &str) -> std::path::PathBuf {
+    let path = dir.join("policy.toml");
+    std::fs::write(&path, contents).expect("write policy");
+    path
+}
+
+#[test]
+fn ordeal_live_precomputed_allow_records_executed_calls() {
+    let suite = TaskSuite::load(std::path::Path::new(ORDEAL_TASKS_PATH)).expect("suite");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let policy_path = write_policy(temp.path(), "schema_version = 1\n");
+    let policy = PolicyEngine::load(&policy_path).expect("policy");
+
+    let config = OrdealConfig {
+        seed: 42,
+        run_id: 0,
+        case_id: "case".to_string(),
+        pass_threshold_f32: 0.5,
+        pass_threshold_witnessed: "f32:0x3F000000".to_string(),
+        regress: false,
+    };
+    let mut transcript = ToolTranscript::new_live(None).with_policy(policy);
+    let _ = cogitator::ordeal::run_ordeal(&suite, &config, &mut transcript).expect("live");
+    let record = transcript.into_record();
+    assert!(!record.entries.is_empty());
+    assert!(record.phantom_entries.is_empty());
+}
+
+#[test]
+fn ordeal_live_precomputed_block_records_phantom_not_entry() {
+    let suite = TaskSuite::load(std::path::Path::new(ORDEAL_TASKS_PATH)).expect("suite");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let policy_path = write_policy(
+        temp.path(),
+        r#"
+schema_version = 1
+
+[[rules]]
+id = "block-lookup"
+tool_pattern = "ordeal.lookup"
+verdict = "block"
+reason = "blocked"
+"#,
+    );
+    let policy = PolicyEngine::load(&policy_path).expect("policy");
+
+    let config = OrdealConfig {
+        seed: 42,
+        run_id: 0,
+        case_id: "case".to_string(),
+        pass_threshold_f32: 0.5,
+        pass_threshold_witnessed: "f32:0x3F000000".to_string(),
+        regress: false,
+    };
+    let mut transcript = ToolTranscript::new_live(None).with_policy(policy);
+    let _ = cogitator::ordeal::run_ordeal(&suite, &config, &mut transcript).expect("live");
+    let record = transcript.into_record();
+    assert!(record
+        .entries
+        .iter()
+        .all(|c| c.tool_name != "ordeal.lookup"));
+    assert!(record
+        .phantom_entries
+        .iter()
+        .any(|p| p.tool_name == "ordeal.lookup"));
 }

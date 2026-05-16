@@ -4,6 +4,14 @@ All notable changes to Cogitator are documented in this file.
 
 ## Unreleased
 
+## 2.2.2 - 2026-05-16
+
+### Changed
+- Replay mode now preserves `policy_digest` from the baseline transcript.
+- Ordeal live dispatch now applies policy when recording precomputed fixture responses.
+- README clarifies that `--nix-provenance=auto|on` may run bounded local Nix commands for diagnostic provenance.
+- Bumped crate version to `2.2.2` for release preparation.
+
 ## 2.2.1 - 2026-05-15
 
 ### Changed

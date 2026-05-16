@@ -1,6 +1,6 @@
 [package]
 name = "cogitator"
-version = "2.2.1"
+version = "2.2.2"
 edition = "2021"
 build = "build.rs"
 description = "Tamper-evident AI agent audit harness with cryptographic witness chain, pre-call policy interception, and byte-stable replay"

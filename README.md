@@ -37,7 +37,7 @@ The project is a verifier/audit substrate. It is not a full agent framework and 
 ## Quick start
 
 `--clean` now refuses dangerous output paths (such as filesystem root, home, repo root, `.git`, and symlinked output dirs).
-`--nix-provenance=auto|on` may execute bounded local Nix commands for diagnostic provenance only; it does not affect witness root computation.
+`--nix-provenance=auto|on` may execute bounded local Nix commands for diagnostic provenance (closed stdin, timeout-bounded, output-capped); it does not affect witness root computation.
 
 ```bash
 cargo build --release

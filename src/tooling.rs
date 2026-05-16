@@ -176,6 +176,7 @@ pub struct ToolTranscript {
     next_call_idx: u32,
     policy: PolicyEngine,
     history: CallHistory,
+    replay_policy_digest: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +198,7 @@ impl ToolTranscript {
             next_call_idx: 0,
             policy: PolicyEngine::allow_all(),
             history: CallHistory::new(),
+            replay_policy_digest: None,
         }
     }
 
@@ -224,6 +226,7 @@ impl ToolTranscript {
             next_call_idx: 0,
             policy: PolicyEngine::allow_all(),
             history: CallHistory::new(),
+            replay_policy_digest: Some(expected.policy_digest),
         }
     }
 
@@ -309,26 +312,58 @@ impl ToolTranscript {
         }
     }
 
-    /// Caller-supplied response path — policy is intentionally bypassed.
-    ///
-    /// Used by the ordeal/replay harness which constructs the response itself
-    /// (replay: read from baseline record; ordeal: synthetic stub with known
-    /// inputs).  The caller takes responsibility for the response content;
-    /// this method only records the call and applies chaos / drift checks.
-    ///
-    /// **Do not use this from a normal Live agent path** — use `execute()`
-    /// instead so the policy gate and history recording fire correctly.
-    pub(crate) fn execute_with_response_bypassing_policy_for_harness_only(
+    pub(crate) fn execute_with_precomputed_response(
         &mut self,
         step: u32,
         request: ToolRequest,
         response: ToolResponse,
     ) -> ToolResponse {
+        let request = ToolRequest {
+            tool_name: request.tool_name.to_lowercase(),
+            arguments: request.arguments,
+        };
+
         let tool_call_idx = self.next_call_idx;
         self.next_call_idx = self.next_call_idx.saturating_add(1);
-        self.history
-            .record(&request.tool_name, PolicyVerdict::Allow);
-        self.execute_with_response_inner(step, tool_call_idx, request, response)
+
+        let (verdict, rule_id, reason) = self.policy.evaluate(&request, &self.history);
+
+        match verdict {
+            PolicyVerdict::Block | PolicyVerdict::Phantom => {
+                let disposition = if verdict == PolicyVerdict::Block {
+                    PhantomDisposition::Blocked
+                } else {
+                    PhantomDisposition::Phantom
+                };
+
+                self.phantom_recorded.push(PhantomEntry {
+                    step,
+                    tool_call_idx,
+                    tool_name: request.tool_name.clone(),
+                    request: request.arguments.clone(),
+                    disposition,
+                    rule_id,
+                    reason: reason.clone(),
+                });
+
+                self.history.record(&request.tool_name, verdict);
+
+                ToolResponse {
+                    tool_name: request.tool_name,
+                    output: serde_json::json!({
+                        "blocked": true,
+                        "reason": reason,
+                    }),
+                    success: false,
+                    simulated_latency_ms: None,
+                }
+            }
+            PolicyVerdict::Allow => {
+                self.history
+                    .record(&request.tool_name, PolicyVerdict::Allow);
+                self.execute_with_response_inner(step, tool_call_idx, request, response)
+            }
+        }
     }
 
     fn execute_with_response_inner(
@@ -474,7 +509,7 @@ impl ToolTranscript {
             mode: self.mode,
             entries: self.recorded,
             phantom_entries: self.phantom_recorded,
-            policy_digest: self.policy.digest,
+            policy_digest: self.replay_policy_digest.unwrap_or(self.policy.digest),
         }
     }
 }

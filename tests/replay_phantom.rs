@@ -64,3 +64,26 @@ fn drift_reports_policy_and_phantom_mismatch() {
         .iter()
         .any(|i| matches!(i, DriftIssue::PhantomReasonMismatch { .. })));
 }
+
+#[test]
+fn replay_preserves_policy_digest() {
+    let expected = ToolTranscriptRecord {
+        schema_version: TOOL_TRANSCRIPT_SCHEMA_VERSION,
+        mode: ToolMode::Live,
+        entries: vec![],
+        phantom_entries: vec![phantom_entry()],
+        policy_digest: "abc".to_string(),
+    };
+
+    let mut replay = ToolTranscript::new_replay(expected);
+    let _ = replay.execute(
+        0,
+        ToolRequest {
+            tool_name: "trade.buy".to_string(),
+            arguments: serde_json::json!({"qty": 1}),
+        },
+    );
+
+    let record = replay.into_record();
+    assert_eq!(record.policy_digest, "abc");
+}
