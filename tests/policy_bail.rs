@@ -172,18 +172,18 @@ fn history_guard_blocks_calls_over_budget() {
         "clawdbot.*",
         2,
     )]);
+    // max = 2: calls 1 and 2 are allowed, call 3 is blocked.
     let mut transcript = ToolTranscript::new_live(None).with_policy(engine);
     transcript.execute(0, req("clawdbot.lookup"));
     transcript.execute(1, req("clawdbot.lookup"));
-    transcript.execute(2, req("clawdbot.lookup"));
-    let r3 = transcript.execute(3, req("clawdbot.lookup"));
+    let r3 = transcript.execute(2, req("clawdbot.lookup"));
     assert!(!r3.success);
     assert_eq!(
         r3.output.get("blocked").and_then(|v| v.as_bool()),
         Some(true)
     );
     let record = transcript.into_record();
-    assert_eq!(record.entries.len(), 3);
+    assert_eq!(record.entries.len(), 2);
     assert_eq!(record.phantom_entries.len(), 1);
     assert_eq!(
         record.phantom_entries[0].rule_id.as_deref(),

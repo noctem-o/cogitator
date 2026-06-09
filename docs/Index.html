@@ -24,9 +24,9 @@
 html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
-background: var(–paper);
-color: var(–ink);
-font-family: ‘DM Sans’, sans-serif;
+background: var(--paper);
+color: var(--ink);
+font-family: 'DM Sans', sans-serif;
 font-weight: 300;
 line-height: 1.7;
 -webkit-font-smoothing: antialiased;
@@ -34,7 +34,7 @@ line-height: 1.7;
 
 /* –– HEADER –– */
 header {
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 padding: 2rem 0 0;
 position: relative;
 overflow: hidden;
@@ -47,11 +47,11 @@ padding: 0 2rem;
 }
 
 .wordmark {
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.75rem;
 font-weight: 500;
 letter-spacing: 0.25em;
-color: var(–fade);
+color: var(--fade);
 text-transform: uppercase;
 margin-bottom: 3rem;
 display: flex;
@@ -60,31 +60,31 @@ gap: 1rem;
 }
 
 .wordmark::after {
-content: ‘’;
+content: '';
 flex: 1;
 height: 1px;
-background: var(–rule);
+background: var(--rule);
 }
 
 h1 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: clamp(2.8rem, 6vw, 4.5rem);
 font-weight: 400;
 line-height: 1.08;
 letter-spacing: -0.02em;
-color: var(–ink);
+color: var(--ink);
 max-width: 720px;
 margin-bottom: 2rem;
 }
 
 h1 em {
 font-style: italic;
-color: var(–accent);
+color: var(--accent);
 }
 
 .lede {
 font-size: 1.15rem;
-color: var(–fade);
+color: var(--fade);
 max-width: 560px;
 margin-bottom: 3rem;
 font-weight: 300;
@@ -93,7 +93,7 @@ line-height: 1.65;
 
 .header-rule {
 border: none;
-border-top: 1px solid var(–rule);
+border-top: 1px solid var(--rule);
 margin: 0;
 }
 
@@ -104,12 +104,12 @@ margin: 0 auto;
 padding: 0.9rem 2rem;
 display: flex;
 gap: 2rem;
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.7rem;
 letter-spacing: 0.12em;
-color: var(–fade);
+color: var(--fade);
 text-transform: uppercase;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 flex-wrap: wrap;
 }
 
@@ -123,7 +123,7 @@ padding: 0 2rem 6rem;
 /* –– PROBLEM BLOCK –– */
 .problem {
 padding: 4rem 0 3.5rem;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 display: grid;
 grid-template-columns: 1fr 2fr;
 gap: 3rem;
@@ -131,40 +131,40 @@ align-items: start;
 }
 
 .section-label {
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.68rem;
 letter-spacing: 0.2em;
 text-transform: uppercase;
-color: var(–fade);
+color: var(--fade);
 padding-top: 0.35rem;
 position: sticky;
 top: 2rem;
 }
 
 .problem-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 1.5rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .problem-body p {
-color: var(–mono);
+color: var(--mono);
 margin-bottom: 1.2rem;
 font-size: 1rem;
 }
 
 .pull-quote {
-border-left: 2px solid var(–red);
+border-left: 2px solid var(--red);
 padding: 1rem 1.5rem;
 margin: 2rem 0;
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-style: italic;
 font-size: 1.15rem;
-color: var(–ink);
+color: var(--ink);
 line-height: 1.5;
 background: rgba(139,26,26,0.03);
 }
@@ -172,7 +172,7 @@ background: rgba(139,26,26,0.03);
 /* –– SOLUTION BLOCK –– */
 .solution {
 padding: 4rem 0 3.5rem;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 display: grid;
 grid-template-columns: 1fr 2fr;
 gap: 3rem;
@@ -180,55 +180,55 @@ align-items: start;
 }
 
 .solution-body p {
-color: var(–mono);
+color: var(--mono);
 margin-bottom: 1.2rem;
 font-size: 1rem;
 }
 
 .solution-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 1.5rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .three-proofs {
 display: grid;
 grid-template-columns: repeat(3, 1fr);
 gap: 1px;
-background: var(–rule);
-border: 1px solid var(–rule);
+background: var(--rule);
+border: 1px solid var(--rule);
 margin: 2.5rem 0;
 }
 
 .proof-cell {
-background: var(–paper);
+background: var(--paper);
 padding: 1.4rem 1.2rem;
 }
 
 .proof-num {
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.65rem;
 letter-spacing: 0.15em;
-color: var(–fade);
+color: var(--fade);
 margin-bottom: 0.6rem;
 }
 
 .proof-cell p {
 font-size: 0.9rem !important;
-color: var(–mono) !important;
+color: var(--mono) !important;
 margin: 0 !important;
 line-height: 1.5;
 }
 
 .proof-cell strong {
 display: block;
-font-family: ‘DM Sans’, sans-serif;
+font-family: 'DM Sans', sans-serif;
 font-weight: 500;
-color: var(–ink);
+color: var(--ink);
 font-size: 0.92rem;
 margin-bottom: 0.3rem;
 }
@@ -236,7 +236,7 @@ margin-bottom: 0.3rem;
 /* –– BENEFITS –– */
 .benefits {
 padding: 4rem 0 3.5rem;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 display: grid;
 grid-template-columns: 1fr 2fr;
 gap: 3rem;
@@ -244,13 +244,13 @@ align-items: start;
 }
 
 .benefits-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 2rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .benefit-list {
@@ -265,7 +265,7 @@ display: grid;
 grid-template-columns: 180px 1fr;
 gap: 1.5rem;
 padding: 1.2rem 0;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 align-items: start;
 }
 
@@ -274,23 +274,23 @@ border-bottom: none;
 }
 
 .benefit-tag {
-font-family: ‘DM Sans’, sans-serif;
+font-family: 'DM Sans', sans-serif;
 font-weight: 500;
 font-size: 0.9rem;
-color: var(–accent);
+color: var(--accent);
 padding-top: 0.1rem;
 }
 
 .benefit-desc {
 font-size: 0.95rem;
-color: var(–mono);
+color: var(--mono);
 line-height: 1.6;
 }
 
 /* –– AUDIENCE –– */
 .audience {
 padding: 4rem 0 3.5rem;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 display: grid;
 grid-template-columns: 1fr 2fr;
 gap: 3rem;
@@ -298,45 +298,45 @@ align-items: start;
 }
 
 .audience-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 2rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .audience-grid {
 display: grid;
 grid-template-columns: 1fr 1fr;
 gap: 1px;
-background: var(–rule);
-border: 1px solid var(–rule);
+background: var(--rule);
+border: 1px solid var(--rule);
 }
 
 .audience-cell {
-background: var(–paper);
+background: var(--paper);
 padding: 1.4rem 1.3rem;
 }
 
 .audience-cell .role {
 font-weight: 500;
 font-size: 0.9rem;
-color: var(–ink);
+color: var(--ink);
 margin-bottom: 0.35rem;
 }
 
 .audience-cell .role-desc {
 font-size: 0.88rem;
-color: var(–fade);
+color: var(--fade);
 line-height: 1.5;
 }
 
 /* –– REGULATORY –– */
 .regulatory {
 padding: 4rem 0 3.5rem;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 display: grid;
 grid-template-columns: 1fr 2fr;
 gap: 3rem;
@@ -344,13 +344,13 @@ align-items: start;
 }
 
 .regulatory-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 1.5rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .reg-table {
@@ -360,28 +360,28 @@ font-size: 0.9rem;
 }
 
 .reg-table th {
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.65rem;
 letter-spacing: 0.15em;
 text-transform: uppercase;
-color: var(–fade);
+color: var(--fade);
 font-weight: 500;
 text-align: left;
 padding: 0 1rem 0.8rem 0;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 }
 
 .reg-table td {
 padding: 0.9rem 1rem 0.9rem 0;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 vertical-align: top;
-color: var(–mono);
+color: var(--mono);
 line-height: 1.5;
 }
 
 .reg-table td:first-child {
 font-weight: 500;
-color: var(–ink);
+color: var(--ink);
 white-space: nowrap;
 font-size: 0.88rem;
 }
@@ -398,41 +398,41 @@ align-items: start;
 }
 
 .cta-body h2 {
-font-family: ‘DM Serif Display’, serif;
+font-family: 'DM Serif Display', serif;
 font-size: 1.9rem;
 font-weight: 400;
 line-height: 1.2;
 letter-spacing: -0.01em;
 margin-bottom: 1.2rem;
-color: var(–ink);
+color: var(--ink);
 }
 
 .cta-body p {
 font-size: 0.95rem;
-color: var(–mono);
+color: var(--mono);
 margin-bottom: 1.5rem;
 line-height: 1.6;
 }
 
 .licence-note {
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.75rem;
-color: var(–fade);
+color: var(--fade);
 line-height: 1.7;
 padding: 1.2rem;
-border: 1px solid var(–rule);
+border: 1px solid var(--rule);
 background: rgba(0,0,0,0.02);
 margin-bottom: 1.5rem;
 }
 
 .contact-link {
 display: inline-block;
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.8rem;
-color: var(–accent);
+color: var(--accent);
 letter-spacing: 0.05em;
 text-decoration: none;
-border-bottom: 1px solid var(–accent-light);
+border-bottom: 1px solid var(--accent-light);
 padding-bottom: 0.1rem;
 transition: opacity 0.15s;
 }
@@ -442,17 +442,17 @@ transition: opacity 0.15s;
 .github-link {
 display: inline-block;
 margin-top: 1rem;
-font-family: ‘DM Mono’, monospace;
+font-family: 'DM Mono', monospace;
 font-size: 0.75rem;
-color: var(–fade);
+color: var(--fade);
 text-decoration: none;
 letter-spacing: 0.06em;
-border-bottom: 1px solid var(–rule);
+border-bottom: 1px solid var(--rule);
 padding-bottom: 0.1rem;
 transition: color 0.15s;
 }
 
-.github-link:hover { color: var(–ink); }
+.github-link:hover { color: var(--ink); }
 
 /* –– ANIMATIONS –– */
 @keyframes fadeUp {
@@ -486,7 +486,7 @@ h1 { font-size: 2.4rem; }
     <div class="wordmark">Cogitator</div>
     <h1>Can you <em>prove</em> what your AI agent did?</h1>
     <p class="lede">
-      A tamper-evident audit layer for AI agents. Cryptographic proof of what your agent did, tried to do, and was blocked from doing — independently verifiable by any third party.
+      A tamper-evident audit layer for AI agents. A cryptographic record of what your agent did, tried to do, and was blocked from doing — recomputable by any third party from the recorded run.
     </p>
   </div>
   <hr class="header-rule">
@@ -529,7 +529,7 @@ h1 { font-size: 2.4rem; }
     <div class="solution-body">
       <h2>A cryptographic record that anyone can verify.</h2>
       <p>
-        Cogitator wraps around an AI agent and produces a cryptographic witness root — a single tamper-evident fingerprint — after every run. Any third party can recompute that fingerprint from the same inputs and confirm the record was never altered after the fact.
+        Cogitator wraps around an AI agent and produces a cryptographic witness root — a single tamper-evident fingerprint — after every run. Any third party can recompute that fingerprint from the recorded run and check it against a value they hold, detecting whether the committed record was altered after it was sealed.
       </p>
       <p>
         Before any tool call is dispatched, Cogitator checks it against a declarative policy file. Allowed calls are executed and recorded. Blocked calls are also recorded — proving not just what the agent did, but what it tried to do and was prevented from doing.
@@ -538,7 +538,6 @@ h1 { font-size: 2.4rem; }
         The result is a self-contained, independently verifiable bundle: every agent step, every tool call, every policy decision, sealed cryptographically.
       </p>
 
-```
   <div class="three-proofs">
     <div class="proof-cell">
       <div class="proof-num">01</div>
@@ -557,7 +556,6 @@ h1 { font-size: 2.4rem; }
     </div>
   </div>
 </div>
-```
 
   </section>
 
@@ -578,11 +576,11 @@ h1 { font-size: 2.4rem; }
         </li>
         <li>
           <span class="benefit-tag">Pre-call control</span>
-          <span class="benefit-desc">A policy layer that enforces operational boundaries before side effects happen — not after. The agent cannot reach outside its sanctioned envelope.</span>
+          <span class="benefit-desc">Every tool call is checked against a declarative policy before any side effect — allowed, blocked, or observed — and each decision is recorded as part of the run.</span>
         </li>
         <li>
           <span class="benefit-tag">Byte-stable replay</span>
-          <span class="benefit-desc">Any prior run can be re-executed from the same inputs and will produce the identical cryptographic fingerprint. Reproducibility is not a claim — it is a verifiable property.</span>
+          <span class="benefit-desc">A recorded run can be re-executed from its transcript and checked for divergence down to the individual tool call, with deterministic inputs producing the same witness root.</span>
         </li>
         <li>
           <span class="benefit-tag">Liability clarity</span>
@@ -684,7 +682,7 @@ h1 { font-size: 2.4rem; }
       </p>
       <a class="contact-link" href="mailto:george.g@tuta.io">george.g@tuta.io</a>
       <br>
-      <a class="github-link" href="https://github.com/noctem-o/Cogitator" target="_blank">github.com/noctem-o/Cogitator</a>
+      <a class="github-link" href="https://github.com/noctem-o/cogitator" target="_blank">github.com/noctem-o/cogitator</a>
     </div>
   </section>
 
