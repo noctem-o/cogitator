@@ -32,25 +32,13 @@ Agent step
   -> witness root
 ```
 
-## Scope: what this is, and is not
+## What Cogitator is
 
-**It is** the reference implementation of the [Cogitator Witness Protocol](spec/COGITATOR_WITNESS_PROTOCOL.md): a recorder, a pre-call policy gate, and a verifier, plus deterministic fixtures that exercise and pin the protocol.
+Cogitator is the reference implementation of the [Cogitator Witness Protocol](spec/COGITATOR_WITNESS_PROTOCOL.md). In practice it's three pieces working together — a recorder that captures an agent run, a policy gate that sits in front of every tool call, and a verifier that recomputes and checks the result — along with deterministic fixtures that exercise the protocol and pin its output in CI.
 
-**It is not** an agent framework, and it does not yet ship a drop-in integration for external agents. The agents and tools it currently drives are deterministic stand-ins:
+It isn't a general agent framework, and there's no drop-in integration for an external agent yet. Everything it drives today is a deterministic stand-in. `clawdbot` is a small scripted demo agent. `ordeal` is a fixed 50-task suite with stubbed tool responses whose job is to catch accidental changes to the protocol — its witness root is pinned as a golden — not to benchmark anything, so passing it says nothing about how a real agent would behave. Tool calls are answered by deterministic stubs, and even the `llm.generate` backend is a stub, so no external model or service is ever contacted. Wiring in a real agent means driving the Rust APIs — `ToolTranscript` and the witness encoding — from your own code.
 
-- `clawdbot` — a small scripted demo agent.
-- `ordeal` — a fixed 50-task conformance suite with stubbed tool responses. It guards the protocol against accidental change (its witness root is pinned as a golden in CI); it is **not** a benchmark and passing it says nothing about real agent quality.
-- Tool calls are answered by deterministic stubs, and the `llm.generate` backend is a stub. No external model or service is contacted.
-
-Wiring a real agent in today means driving the Rust APIs (`ToolTranscript`, the witness encoding) from your own code.
-
-**What a matching root proves — and what it doesn't:**
-
-| | |
-|---|---|
-| Proves | The bundle's committed semantics (metadata, agent trace, tool/phantom operations) are exactly what the root commits to — nothing was edited, reordered, truncated, or injected after sealing. |
-| Does not prove | That the run actually happened at a given time. A bundle and its root can be regenerated wholesale; to prove occurrence, anchor the root externally (publish it, timestamp it, or compare against a root you received out-of-band via `--expect`). |
-| Does not prove | Hardware or runtime integrity of the machine that produced the bundle, or determinism of nondeterministic model backends. |
+It's also worth being clear about what a matching witness root does and doesn't tell you. It establishes integrity relative to that root: the bundle's committed semantics — metadata, agent trace, tool and phantom operations — are exactly what the root commits to, with nothing edited, reordered, truncated, or injected after the run was sealed. It does not, on its own, prove the run ever happened, because a bundle and its root can be regenerated from scratch. Proving occurrence means anchoring the root somewhere outside the bundle: publishing it, timestamping it, or comparing it against a root you received out of band with `--expect`. And it says nothing about the integrity of the machine that produced the bundle, or about making a nondeterministic model backend reproducible.
 
 ## Quick start
 
@@ -92,7 +80,7 @@ schema_version = 1
 id = "trade-budget"
 tool_pattern = "trade.*"           # '*' stays within a dot-segment; '**' crosses segments
 history_tool_pattern = "trade.*"
-history_max_calls = 2              # allow calls 1-3, block call 4 onward
+history_max_calls = 2              # allow 2 matching calls, block the 3rd onward
 verdict = "block"
 reason = "trade call budget exceeded"
 
