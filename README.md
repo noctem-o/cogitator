@@ -162,8 +162,9 @@ A Nix dev shell is available via `nix develop`.
 
 - [Witness protocol specification](spec/COGITATOR_WITNESS_PROTOCOL.md) — schema versions, commitment boundary, verification rules. Status: draft, intentionally implementation-coupled.
 - `schemas/` — JSON Schemas for the bundle artifacts.
-- `replay/run_0000/` — a checked-in example bundle.
 - `main.pdf` — design write-up of the commitment model and determinism experiments.
+
+To produce a bundle you can verify, generate one locally with the quick-start commands above rather than relying on a pre-made example.
 
 ## License
 
