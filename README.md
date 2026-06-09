@@ -117,7 +117,9 @@ Three layers, in increasing strength:
 |---|---|---|
 | Bundle self-consistency | `verify --witness <dir>` | Manifest paths resolve under strict confinement (no absolute paths, `..` escapes, or symlink escapes) and the SHA-256 artifact/bundle hashes match the recorded values. |
 | Semantic recompute | `verify --witness <dir> --recompute-witness-root` | The witness root recomputes from the bundle's recorded semantics. Recompute fails closed on incomplete or inconsistent transcripts (missing steps, orphan or duplicate tool calls, trace/transcript mismatches). |
-| Anchored verification | `verify --witness <dir> --expect <root>` | The bundle matches a root you obtained from somewhere you trust. This is the only layer that defends against wholesale bundle replacement. |
+| Anchored verification | `verify --witness <dir> --recompute-witness-root --expect <root>` | The bundle's recomputed root matches a root you obtained from somewhere you trust. This is the only layer that defends against wholesale bundle replacement. |
+
+Anchored verification requires `--recompute-witness-root`: in the plain bundle check (`verify --witness <dir>` without that flag), `--expect` is currently not consulted.
 
 The `witness_root.txt` stored inside a bundle is a convenience for self-checks. It is not external anchoring — treat the first two layers as integrity checks and the third as the actual evidentiary comparison.
 
@@ -141,7 +143,7 @@ Committed into the witness root: witnessed metadata, agent trace entries, execut
 
 ## Replay and drift
 
-A recorded bundle can be replayed (`run --replay <bundle_dir>`): tool responses are substituted from the transcript instead of re-executed, and any divergence between the recorded and replayed runs is localized in `drift_report.json` down to the first mismatching call and field. Deterministic fault injection (`--faults on --fault-profile ci|stress`) is keyed by seed/run/step/call, so fault schedules are identical across runs and never a source of spurious drift.
+A recorded bundle can be replayed (`run --replay <bundle_dir> --runs 1`; replay requires a single run): tool responses are substituted from the transcript instead of re-executed, and divergences in the tool transcript — requests, outcomes, faults, phantom entries, and the policy digest — are localized per call in `drift_report.json`. The drift report covers the transcript only; a change in the agent trace itself (thoughts, actions, finality) is not diffed there and surfaces as a witness-root mismatch instead. Deterministic fault injection (`--faults on --fault-profile ci|stress`) is keyed by seed/run/step/call, so fault schedules are identical across runs and never a source of spurious drift.
 
 ## Development
 
