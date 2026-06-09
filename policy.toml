@@ -25,7 +25,8 @@ schema_version = 1
 # verdict     = "phantom"
 # reason      = "Research tools are observation-only in this environment."
 
-# Block further trade calls once the agent has already made more than 3 this run.
+# Allow up to 3 trade calls per run; block the 4th onward.
+# (history_max_calls = N allows N matching calls and blocks the (N+1)th.)
 # [[rules]]
 # id                   = "trade-budget"
 # tool_pattern         = "trade.*"
