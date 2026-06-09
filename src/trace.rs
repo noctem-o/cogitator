@@ -43,8 +43,16 @@ fn to_canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     canonical_json::to_vec(value)
 }
 
-fn normalize_ordeal_tool_name_for_witness(tool_name: &str) -> String {
-    tool_name.to_string()
+/// Normalise a tool name for the witness view.
+///
+/// Tool names are committed lowercased so the agent trace and the transcript
+/// agree even when the agent emitted mixed case. This mirrors the lowercasing
+/// the dispatch gate applies in `ToolTranscript::execute`; without it, a
+/// capitalised tool name in the trace would never match its (already
+/// lowercased) transcript entry and witness recompute would fail closed on an
+/// otherwise valid run.
+fn normalize_tool_name_for_witness(tool_name: &str) -> String {
+    tool_name.to_lowercase()
 }
 
 #[derive(Serialize)]
@@ -66,7 +74,7 @@ impl From<&AgentTraceEntry> for AgentTraceEntryWitness {
             .tool_requests
             .iter()
             .map(|req| ToolRequest {
-                tool_name: normalize_ordeal_tool_name_for_witness(&req.tool_name),
+                tool_name: normalize_tool_name_for_witness(&req.tool_name),
                 arguments: req.arguments.clone(),
             })
             .collect();
@@ -149,7 +157,7 @@ impl From<&PhantomEntry> for PhantomEntryWitnessView {
         Self {
             step: entry.step,
             tool_call_idx: entry.tool_call_idx,
-            tool_name: normalize_ordeal_tool_name_for_witness(&entry.tool_name),
+            tool_name: normalize_tool_name_for_witness(&entry.tool_name),
             request: entry.request.clone(),
             disposition: entry.disposition.clone(),
             rule_id: entry.rule_id.clone(),
@@ -191,7 +199,7 @@ impl From<&ToolCall> for ToolCallWitnessView {
         Self {
             step: call.step,
             tool_call_idx: call.tool_call_idx,
-            tool_name: normalize_ordeal_tool_name_for_witness(&call.tool_name),
+            tool_name: normalize_tool_name_for_witness(&call.tool_name),
             request: call.request.clone(),
             outcome: ToolCallOutcomeWitnessView::from(&call.outcome),
             fault: call.fault.as_ref().map(TranscriptFaultWitnessView::from),
@@ -297,7 +305,11 @@ fn validate_agent_witness_inputs(
                 ToolOpWitnessView::Executed(call) => (&call.tool_name, &call.request),
                 ToolOpWitnessView::Intercepted(phantom) => (&phantom.tool_name, &phantom.request),
             };
-            if request.tool_name != *tool_name || request.arguments != *arguments {
+            // Compare against the normalised name so a mixed-case trace request
+            // still matches its lowercased transcript op.
+            if normalize_tool_name_for_witness(&request.tool_name) != *tool_name
+                || request.arguments != *arguments
+            {
                 anyhow::bail!(
                     "tool request/op mismatch at step {} for tool_call_idx {}",
                     entry.step,
@@ -352,4 +364,50 @@ pub fn index_tool_ops_by_step(
             ));
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_agent_witness_root;
+    use crate::agent::AgentTraceEntry;
+    use crate::model::WitnessedMetadata;
+    use crate::tooling::{ToolCall, ToolOutcome, ToolRequest};
+    use anyhow::Result;
+
+    fn agent_root(trace_tool_name: &str) -> Result<String> {
+        let metadata = WitnessedMetadata::default();
+        let agent_trace = vec![AgentTraceEntry {
+            step: 0,
+            role: "assistant".to_string(),
+            thought: "t".to_string(),
+            action: "a".to_string(),
+            tool_requests: vec![ToolRequest {
+                tool_name: trace_tool_name.to_string(),
+                arguments: serde_json::json!({ "k": "v" }),
+            }],
+            is_final: true,
+        }];
+        // The transcript side is always lowercased by the dispatch gate.
+        let tool_calls = vec![ToolCall {
+            step: 0,
+            tool_call_idx: 0,
+            tool_name: "clawdbot.lookup".to_string(),
+            request: serde_json::json!({ "k": "v" }),
+            outcome: ToolOutcome::Ok {
+                output: serde_json::json!({ "ok": true }),
+                simulated_latency_ms: None,
+            },
+            fault: None,
+        }];
+        compute_agent_witness_root(&metadata, &agent_trace, &tool_calls, &[])
+    }
+
+    #[test]
+    fn mixed_case_trace_name_validates_and_matches_lowercase() {
+        // A capitalised tool name in the agent trace must not break recompute,
+        // and must produce the same root as the all-lowercase equivalent.
+        let mixed = agent_root("Clawdbot.Lookup").expect("mixed-case trace name must validate");
+        let lower = agent_root("clawdbot.lookup").expect("lowercase trace name must validate");
+        assert_eq!(mixed, lower);
+    }
 }
