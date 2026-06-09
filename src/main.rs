@@ -1127,6 +1127,15 @@ fn verify_cmd(args: VerifyArgs) -> Result<()> {
 
     if let Some(ref witness) = args.witness {
         if witness.is_dir() {
+            // The plain bundle check validates self-consistency only; it does not
+            // recompute the witness root, so it cannot compare against --expect.
+            // Fail closed rather than silently ignore the anchor the caller supplied.
+            if args.expect.is_some() {
+                anyhow::bail!(
+                    "--expect anchors against a recomputed witness root, which the plain bundle \
+                     check does not perform; re-run with --recompute-witness-root --expect <root>"
+                );
+            }
             let report = drift::verify_witness_bundle(witness)?;
             println!(
                 "Verification: verified={} issues={} bundle_hash_expected={} bundle_hash_actual={}",
