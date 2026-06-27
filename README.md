@@ -10,7 +10,7 @@
 
 Cogitator records what an agent did, what it asked to do, and what a policy stopped it from doing — then seals the run under a single cryptographic fingerprint, the **witness root**. Anyone holding the run bundle can recompute that fingerprint and detect whether the record was altered after the fact.
 
-## The idea in 60 seconds
+## Brief Overview
 
 Most agent "audit trails" are ordinary log files: mutable, easy to trim, and written by the same system you are trying to audit. Cogitator treats the run itself as evidence:
 
